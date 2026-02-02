@@ -30,3 +30,10 @@ See **[README_original.md](README_original.md)** for the original documentation 
    ```bash
    python scripts/download_data.py
    ```
+
+3. **Run Evaluation:**  
+   Use evatution script
+
+   ```bash
+   python evaluate.py --pred my_predictions.json --gt ./data/SoccerNet/test/test_gt.json
+   ```
