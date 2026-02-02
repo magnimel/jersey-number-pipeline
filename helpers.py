@@ -513,6 +513,9 @@ def identify_soccer_balls(image_dir, soccer_ball_list):
     tracklets = os.listdir(image_dir)
     for track in tqdm(tracklets):
         track_path = os.path.join(image_dir, track)
+        # Skip non-directory files (e.g., .DS_Store)
+        if not os.path.isdir(track_path):
+            continue
         image_names = os.listdir(track_path)
         sample = len(image_names) if len(image_names) < 10 else 10
         imgs = np.random.choice(image_names, size=sample, replace=False)
