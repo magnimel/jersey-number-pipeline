@@ -36,62 +36,8 @@ def get_specs_from_version(model_version):
     conf, weights = str(conf), str(weights)
     return conf, weights
 
-def download_model_from_gdrive(file_id, output_path):
-    """Download model from Google Drive using gdown."""
-    try:
-        import gdown
-    except ImportError:
-        print("Installing gdown for Google Drive downloads...")
-        import subprocess
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "gdown"])
-        import gdown
-    
-    url = f'https://drive.google.com/uc?id={file_id}'
-    print(f"Downloading model to {output_path}...")
-    gdown.download(url, output_path, quiet=False)
-    print("Download complete!")
-
 def load_checkpoint_legacy(checkpoint_path, cfg):
     """Load checkpoint with weights_only=False for PyTorch 2.6+ compatibility."""
-    # Check if file exists and is valid
-    if not os.path.exists(checkpoint_path):
-        raise FileNotFoundError(
-            f"Checkpoint file not found: {checkpoint_path}\n"
-            f"Please download models from: https://drive.google.com/drive/folders/1NWD2Q0JGasGm9HTcOy4ZqsIqK4-IfknK"
-        )
-    
-    # Check if file is HTML (corrupted download)
-    with open(checkpoint_path, 'rb') as f:
-        header = f.read(200)
-        if header.startswith(b'<!DOCTYPE') or header.startswith(b'<html') or b'Google Drive' in header:
-            print(f"\n⚠️  ERROR: Checkpoint file is corrupted (HTML from Google Drive)!")
-            print(f"File: {checkpoint_path}")
-            
-            # Attempt to re-download if we know the file ID
-            model_file_ids = {
-                'market1501_resnet50_256_128_epoch_120.ckpt': '1gdkEnXsARqI3hK-cGbO8I1gPIrYYHYDd',
-                'dukemtmcreid_resnet50_256_128_epoch_120.ckpt': '1P6dHIMc1535T43nmkGEVNxu3HvcSp_10'
-            }
-            
-            filename = os.path.basename(checkpoint_path)
-            if filename in model_file_ids:
-                response = input(f"\nAttempt to download {filename} automatically? (y/n): ").lower()
-                if response == 'y':
-                    # Backup the corrupted file
-                    os.rename(checkpoint_path, checkpoint_path + '.corrupted')
-                    download_model_from_gdrive(model_file_ids[filename], checkpoint_path)
-                else:
-                    raise ValueError(
-                        f"Please manually download from: "
-                        f"https://drive.google.com/file/d/{model_file_ids[filename]}/view\n"
-                        f"Or use: gdown https://drive.google.com/uc?id={model_file_ids[filename]} -O {checkpoint_path}"
-                    )
-            else:
-                raise ValueError(
-                    f"Unknown model file. Please download from:\n"
-                    f"https://drive.google.com/drive/folders/1NWD2Q0JGasGm9HTcOy4ZqsIqK4-IfknK"
-                )
-    
     # Save original torch.load
     original_load = torch.load
     
