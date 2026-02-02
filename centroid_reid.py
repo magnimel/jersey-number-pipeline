@@ -43,7 +43,10 @@ def generate_features(input_folder, output_folder, model_version='res50_market')
     cfg.merge_from_list(opts)
     
     use_cuda = True if torch.cuda.is_available() and cfg.GPU_IDS else False
-    model = CTLModel.load_from_checkpoint(cfg.MODEL.PRETRAIN_PATH, cfg=cfg)
+    # PyTorch 2.6+ defaults to weights_only=True, which causes issues with some checkpoints
+    # Load with weights_only=False to support legacy checkpoint formats
+    with torch.serialization.weights_only(False):
+        model = CTLModel.load_from_checkpoint(cfg.MODEL.PRETRAIN_PATH, cfg=cfg)
 
     # print("Loading from " + MODEL_FILE)
     if use_cuda:
