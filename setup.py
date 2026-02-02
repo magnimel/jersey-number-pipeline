@@ -4,38 +4,17 @@ import json
 import urllib.request
 import gdown
 import argparse
+import subprocess
 
 
-###### common setup utils ##############
+###### Colab setup utils ##############
 
-def make_conda_env(env_name, libs=""):
-    os.system(f"conda create -n {env_name} -y "+libs)
-
-def activate_conda_env(env_name):
-    os.system(f"conda activate {env_name}")
-
-def deactivate_conda_env(env_name):
-    os.system(f"conda deactivate")
-
-def conda_pyrun(env_name, exec_file, args):
-    os.system(f"conda run -n {env_name} --live-stream python3 \"{exec_file}\" '{json.dumps(dict(vars(args)))}'")
-
-
-def get_conda_envs():
-    stream = os.popen("conda env list")
-    output = stream.read()
-    a = output.split()
-    a.remove("*")
-    a.remove("#")
-    a.remove("#")
-    a.remove("conda")
-    a.remove("environments:")
-    return a[::2]
-###########################################
+def run_pip_install(packages):
+    """Install packages using pip"""
+    os.system(f"pip install {packages}")
 
 
 def setup_reid(root):
-    env_name  = cfg.reid_env
     repo_name = "centroids-reid"
     src_url   = "https://github.com/mikwieczorek/centroids-reid.git"
     rep_path  = "./reid"
@@ -56,19 +35,12 @@ def setup_reid(root):
         save_path = os.path.join(models_folder_path, "market1501_resnet50_256_128_epoch_120.ckpt")
         urllib.request.urlretrieve(url, save_path)
 
-    if not env_name in get_conda_envs():
-        make_conda_env(env_name, libs="python=3.8")
         cwd = os.getcwd()
         os.chdir(os.path.join(rep_path, repo_name))
-        os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip")
-        os.system(f"conda run --live-stream -n {env_name} pip install -r requirements.txt")
-
+        run_pip_install("-r requirements.txt")
         os.chdir(cwd)
 
-# clone and install vitpose
-# download the model
 def setup_pose(root):
-    env_name  = cfg.pose_env
     repo_name = "ViTPose"
     src_url   = "https://github.com/ViTAE-Transformer/ViTPose.git"
     rep_path  = "./pose"
@@ -80,21 +52,20 @@ def setup_pose(root):
         os.system(f"git clone --recurse-submodules {src_url} {os.path.join(rep_path,repo_name)}")
 
     os.chdir(root)
-    if not env_name in get_conda_envs():
-        make_conda_env(env_name, libs="python=3.8")
-
-        os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip")
-        os.system(f"conda run --live-stream -n {env_name} pip install  mmcv-full==1.4.8 -f https://download.openmmlab.com/mmcv/dist/cu111/torch1.9.0/index.html")
-
-        os.chdir(os.path.join(root, rep_path, "ViTPose"))
-        os.system(f"conda run --live-stream -n {env_name} pip install -v -e .")
-        os.system(f"conda run --live-stream -n {env_name} pip install timm==0.4.9 einops")
+    cwd = os.getcwd()
+    
+    run_pip_install("mmcv-full==1.4.8 -f https://download.openmmlab.com/mmcv/dist/cu117/torch1.9.0/index.html")
+    
+    os.chdir(os.path.join(root, rep_path, "ViTPose"))
+    os.system(f"pip install -v -e .")
+    run_pip_install("timm==0.4.9 einops")
+    
+    os.chdir(cwd)
 
 
 # clone and install str
 # download the model
 def setup_str(root):
-    env_name  = cfg.str_env
     repo_name = "parseq"
     src_url   = "https://github.com/baudm/parseq.git"
     rep_path  = "./str"
@@ -105,13 +76,14 @@ def setup_str(root):
         os.system(f"git clone --recurse-submodules {src_url} {os.path.join(rep_path, repo_name)}")
 
     os.chdir(os.path.join(rep_path, repo_name))
-
-    if not env_name in get_conda_envs():
-        make_conda_env(env_name, libs="python=3.9")
-        os.system(f"make torch-cu117")
-        os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip")
-        os.system(f"conda run --live-stream -n {env_name} pip install -r requirements/core.cu117.txt -e .[train,test]")
-
+    
+    # Install torch with CUDA support for Colab
+    run_pip_install("torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu117")
+    
+    # Install other requirements
+    os.system("pip install -r requirements/core.txt")
+    os.system("pip install -e .[train,test]")
+    
     os.chdir(root)
 
 def download_models_common(root_dir):
