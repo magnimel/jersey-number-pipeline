@@ -10,8 +10,8 @@ import subprocess
 ###### Colab setup utils ##############
 
 def run_pip_install(packages):
-    """Install packages using pip"""
-    os.system(f"pip install {packages}")
+    """Install packages using uv"""
+    os.system(f"uv pip install {packages}")
 
 
 def setup_reid(root):
@@ -59,7 +59,7 @@ def setup_pose(root):
     os.system("mim install mmcv")
     
     os.chdir(os.path.join(root, rep_path, "ViTPose"))
-    os.system(f"pip install -v -e .")
+    os.system(f"uv pip install -v -e .")
     run_pip_install("timm==0.4.9 einops")
     
     os.chdir(cwd)
@@ -83,8 +83,8 @@ def setup_str(root):
     run_pip_install("torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu117")
     
     # Install other requirements
-    os.system("pip install -r requirements/core.txt")
-    os.system("pip install -e .[train,test]")
+    os.system("uv pip install -r requirements/core.txt")
+    os.system("uv pip install -e .[train,test]")
     
     os.chdir(root)
 
