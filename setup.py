@@ -35,10 +35,10 @@ def setup_reid(root):
         save_path = os.path.join(models_folder_path, "market1501_resnet50_256_128_epoch_120.ckpt")
         urllib.request.urlretrieve(url, save_path)
 
-        cwd = os.getcwd()
-        os.chdir(os.path.join(rep_path, repo_name))
-        run_pip_install("-r requirements.txt")
-        os.chdir(cwd)
+        # Skip requirements installation - centroids-reid requires torch==1.7.1+cu101 which is
+        # incompatible with Python 3.12. The reid module can be used with the current PyTorch
+        # version already installed, or this functionality can be skipped for Python 3.12.
+        # print("Note: Skipping centroids-reid requirements (requires PyTorch 1.7.1, incompatible with Python 3.12)")
 
 def setup_pose(root):
     repo_name = "ViTPose"
@@ -83,7 +83,11 @@ def setup_str(root):
     os.chdir(os.path.join(rep_path, repo_name))
     
     # Install torch with CUDA support for Colab
-    run_pip_install("torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu117")
+    # Use unsafe-best-match to allow fallback to PyPI for packages not in PyTorch index
+    # run_pip_install("torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu117 --index-strategy unsafe-best-match")
+    
+    # Upgrade setuptools first to fix pywavelets build issue with Python 3.12
+    run_pip_install("--upgrade setuptools>=70.0.0")
     
     # Install other requirements
     os.system("uv pip install -r requirements/core.txt")
