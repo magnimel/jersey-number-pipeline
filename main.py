@@ -138,6 +138,101 @@ def generate_json_for_pose_estimator(args, legible = None):
     helpers.generate_json(all_files, output_json)
 
 
+def detect_pipeline_stage(args):
+    """Detect which stage the pipeline stopped at by checking for output files."""
+    stages = []
+    
+    if args.dataset == 'SoccerNet':
+        soccer_ball_list = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                          config.dataset['SoccerNet'][args.part]['soccer_ball_list'])
+        features_dir = config.dataset['SoccerNet'][args.part]['feature_output_folder']
+        full_legibile_path = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                          config.dataset['SoccerNet'][args.part]['legible_result'])
+        output_json = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                   config.dataset['SoccerNet'][args.part]['pose_output_json'])
+        crops_destination_dir = os.path.join(config.dataset['SoccerNet']['working_dir'], 
+                                            config.dataset['SoccerNet'][args.part]['crops_folder'], 'imgs')
+        str_result_file = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                       config.dataset['SoccerNet'][args.part]['jersey_id_result'])
+        final_results_path = os.path.join(config.dataset['SoccerNet']['working_dir'], 
+                                         config.dataset['SoccerNet'][args.part]['final_result'])
+        
+        # Check which stages have been completed
+        if os.path.exists(soccer_ball_list):
+            stages.append('soccer_ball_filter')
+        if os.path.exists(features_dir):
+            stages.append('feat')
+        if os.path.exists(features_dir):  # filter uses same directory, check for filter marker
+            stages.append('filter')
+        if os.path.exists(full_legibile_path):
+            stages.append('legible')
+        if os.path.exists(output_json):
+            stages.append('pose')
+        if os.path.exists(crops_destination_dir):
+            stages.append('crops')
+        if os.path.exists(str_result_file):
+            stages.append('str')
+        if os.path.exists(final_results_path):
+            stages.append('combine')
+            
+    elif args.dataset == 'Hockey':
+        legibility_output = os.path.join(config.dataset['Hockey']['root_dir'], 
+                                        config.dataset['Hockey']['legibility_data'], 'results.json')
+        str_output = os.path.join(config.dataset['Hockey']['root_dir'],
+                                 config.dataset['Hockey']['numbers_data'], 'predictions.json')
+        
+        if os.path.exists(legibility_output):
+            stages.append('legible')
+        if os.path.exists(str_output):
+            stages.append('str')
+    
+    return stages
+
+
+def resume_pipeline_from_stage(dataset, stages):
+    """Create pipeline dictionary resuming from the last completed stage."""
+    if dataset == 'SoccerNet':
+        actions = {"soccer_ball_filter": True,
+                   "feat": True,
+                   "filter": True,
+                   "legible": True,
+                   "legible_eval": False,
+                   "pose": True,
+                   "crops": True,
+                   "str": True,
+                   "combine": True,
+                   "eval": True}
+        
+        # Disable stages that have already been completed
+        if 'soccer_ball_filter' in stages:
+            actions['soccer_ball_filter'] = False
+        if 'feat' in stages:
+            actions['feat'] = False
+        if 'filter' in stages:
+            actions['filter'] = False
+        if 'legible' in stages:
+            actions['legible'] = False
+        if 'pose' in stages:
+            actions['pose'] = False
+        if 'crops' in stages:
+            actions['crops'] = False
+        if 'str' in stages:
+            actions['str'] = False
+        if 'combine' in stages:
+            actions['combine'] = False
+            
+    elif dataset == 'Hockey':
+        actions = {"legible": True,
+                   "str": True}
+        
+        if 'legible' in stages:
+            actions['legible'] = False
+        if 'str' in stages:
+            actions['str'] = False
+    
+    return actions
+
+
 def consolidated_results(image_dir, dict, illegible_path, soccer_ball_list=None):
     if not soccer_ball_list is None:
         with open(soccer_ball_list, 'r') as sf:
@@ -368,25 +463,36 @@ if __name__ == '__main__':
     parser.add_argument('dataset', help="Options: 'SoccerNet', 'Hockey'")
     parser.add_argument('part', help="Options: 'test', 'val', 'train', 'challenge")
     parser.add_argument('--train_str', action='store_true', default=False, help="Run training of jersey number recognition")
+    parser.add_argument('--resume', action='store_true', default=False, help="Resume pipeline from last completed stage")
     args = parser.parse_args()
 
     if not args.train_str:
         if args.dataset == 'SoccerNet':
-            actions = {"soccer_ball_filter": True,
-                       "feat": True,
-                       "filter": True,
-                       "legible": True,
-                       "legible_eval": False,
-                       "pose": True,
-                       "crops": True,
-                       "str": True,
-                       "combine": True,
-                       "eval": True}
+            if args.resume:
+                completed_stages = detect_pipeline_stage(args)
+                print(f"Detected completed stages: {completed_stages}")
+                actions = resume_pipeline_from_stage(args.dataset, completed_stages)
+            else:
+                actions = {"soccer_ball_filter": True,
+                           "feat": True,
+                           "filter": True,
+                           "legible": True,
+                           "legible_eval": False,
+                           "pose": True,
+                           "crops": True,
+                           "str": True,
+                           "combine": True,
+                           "eval": True}
             args.pipeline = actions
             soccer_net_pipeline(args)
         elif args.dataset == 'Hockey':
-            actions = {"legible": True,
-                       "str": True}
+            if args.resume:
+                completed_stages = detect_pipeline_stage(args)
+                print(f"Detected completed stages: {completed_stages}")
+                actions = resume_pipeline_from_stage(args.dataset, completed_stages)
+            else:
+                actions = {"legible": True,
+                           "str": True}
             args.pipeline = actions
             hockey_pipeline(args)
         else:
