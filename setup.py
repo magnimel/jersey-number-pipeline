@@ -54,7 +54,9 @@ def setup_pose(root):
     os.chdir(root)
     cwd = os.getcwd()
     
-    run_pip_install("mmcv-full==1.4.8 -f https://download.openmmlab.com/mmcv/dist/cu117/torch1.9.0/index.html")
+    # Install mmcv (newer version compatible with Python 3.12)
+    run_pip_install("-U openmim")
+    os.system("mim install mmcv")
     
     os.chdir(os.path.join(root, rep_path, "ViTPose"))
     os.system(f"pip install -v -e .")
