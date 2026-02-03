@@ -1,0 +1,15 @@
+services:
+  jersey-box:
+    build: .
+    container_name: jersey-box
+    restart: always
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - .:/app              
+      - ./data:/app/data    
