@@ -26,7 +26,7 @@ backcall==0.2.0
     # via ipython
 botorch==0.9.2
     # via ax-platform
-certifi==2023.7.22
+certifi>=2023.7.22
     # via requests
 charset-normalizer==3.2.0
     # via
@@ -241,7 +241,7 @@ pytorch-lightning==1.9.5
     # via -r requirements/core.in
 pytz==2023.3
     # via pandas
-pywavelets==1.4.1
+pywavelets>=1.4.1
     # via scikit-image
 pyyaml==6.0.1
     # via

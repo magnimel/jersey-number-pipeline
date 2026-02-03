@@ -5,7 +5,7 @@ attrs==23.1.0
 ax-platform==0.3.4
 backcall==0.2.0
 botorch==0.9.2
-certifi==2023.7.22
+certifi>=2023.7.22
 charset-normalizer==3.2.0
 click==8.0.4
 comm==0.1.4
@@ -65,7 +65,7 @@ pyro-api==0.1.2
 pyro-ppl==1.8.6
 python-dateutil==2.8.2
 pytz==2023.3
-pywavelets==1.4.1
+pywavelets>=1.4.1
 pyyaml==6.0.1
 ray==1.13.0
 referencing==0.30.2

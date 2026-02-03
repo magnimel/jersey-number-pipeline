@@ -54,13 +54,14 @@ def setup_pose(root):
     os.chdir(root)
     cwd = os.getcwd()
     
+    # Upgrade setuptools FIRST to fix Python 3.12 compatibility globally
+    run_pip_install("--upgrade setuptools>=70.0.0 pip")
+    
     # Install mmcv directly instead of using mim (avoids setuptools compatibility issues)
     # Using mmcv-full for GPU support
     run_pip_install("mmcv")
     
     os.chdir(os.path.join(root, rep_path, "ViTPose"))
-    # Upgrade setuptools to fix Python 3.12 compatibility
-    run_pip_install("--upgrade setuptools>=70.0.0 pip")
     # Install with no-build-isolation to avoid chumpy build issues
     os.system(f"uv pip install -v -e . --no-build-isolation")
     run_pip_install("timm==0.4.9 einops")
