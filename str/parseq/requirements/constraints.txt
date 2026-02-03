@@ -28,7 +28,7 @@ botorch==0.9.2
     # via ax-platform
 certifi>=2023.7.22
     # via requests
-charset-normalizer==3.2.0
+charset-normalizer>=3.2.0
     # via
     #   aiohttp
     #   requests
@@ -148,7 +148,7 @@ networkx==3.1
     # via scikit-image
 nltk==3.8.1
     # via -r requirements/core.in
-numpy==1.25.2
+numpy>=1.26.0
     # via
     #   contourpy
     #   fvcore
