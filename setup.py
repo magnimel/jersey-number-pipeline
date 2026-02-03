@@ -54,12 +54,14 @@ def setup_pose(root):
     os.chdir(root)
     cwd = os.getcwd()
     
-    # Install mmcv (newer version compatible with Python 3.12)
-    run_pip_install("-U openmim")
-    os.system("mim install mmcv")
+    # Install mmcv directly instead of using mim (avoids setuptools compatibility issues)
+    # Using mmcv-full for GPU support
+    run_pip_install("mmcv")
     
     os.chdir(os.path.join(root, rep_path, "ViTPose"))
-    os.system(f"uv pip install -v -e .")
+    # Install with no-build-isolation to avoid chumpy build issues
+    os.system(f"uv pip install pip")  # Ensure pip is available for legacy packages
+    os.system(f"uv pip install -v -e . --no-build-isolation")
     run_pip_install("timm==0.4.9 einops")
     
     os.chdir(cwd)
