@@ -59,8 +59,9 @@ def setup_pose(root):
     run_pip_install("mmcv")
     
     os.chdir(os.path.join(root, rep_path, "ViTPose"))
+    # Upgrade setuptools to fix Python 3.12 compatibility
+    run_pip_install("--upgrade setuptools>=70.0.0 pip")
     # Install with no-build-isolation to avoid chumpy build issues
-    os.system(f"uv pip install pip")  # Ensure pip is available for legacy packages
     os.system(f"uv pip install -v -e . --no-build-isolation")
     run_pip_install("timm==0.4.9 einops")
     
