@@ -2,7 +2,6 @@ from pathlib import Path
 import sys
 import os
 import argparse
-from functools import wraps
 
 ROOT = './reid/centroids-reid/'
 sys.path.append(str(ROOT))  # add ROOT to PATH
@@ -36,36 +35,6 @@ def get_specs_from_version(model_version):
     conf, weights = str(conf), str(weights)
     return conf, weights
 
-def load_checkpoint_legacy(checkpoint_path, cfg):
-    """Load checkpoint with weights_only=False for PyTorch 2.6+ compatibility."""
-    # Save original torch.load
-    original_load = torch.load
-    
-    # Create wrapper that forces weights_only=False
-    @wraps(original_load)
-    def load_wrapper(*args, **kwargs):
-        # Force weights_only=False if the parameter exists
-        if 'weights_only' not in kwargs:
-            try:
-                # Check if weights_only parameter is supported
-                import inspect
-                sig = inspect.signature(original_load)
-                if 'weights_only' in sig.parameters:
-                    kwargs['weights_only'] = False
-            except:
-                pass
-        return original_load(*args, **kwargs)
-    
-    # Temporarily replace torch.load
-    torch.load = load_wrapper
-    try:
-        model = CTLModel.load_from_checkpoint(checkpoint_path, cfg=cfg)
-    finally:
-        # Restore original torch.load
-        torch.load = original_load
-    
-    return model
-
 def generate_features(input_folder, output_folder, model_version='res50_market'):
     # load model
     CONFIG_FILE, MODEL_FILE = get_specs_from_version(model_version)
@@ -74,9 +43,7 @@ def generate_features(input_folder, output_folder, model_version='res50_market')
     cfg.merge_from_list(opts)
     
     use_cuda = True if torch.cuda.is_available() and cfg.GPU_IDS else False
-    # PyTorch 2.6+ defaults to weights_only=True, which causes issues with legacy checkpoints
-    # Use custom loader that forces weights_only=False for compatibility
-    model = load_checkpoint_legacy(cfg.MODEL.PRETRAIN_PATH, cfg)
+    model = CTLModel.load_from_checkpoint(cfg.MODEL.PRETRAIN_PATH, cfg=cfg)
 
     # print("Loading from " + MODEL_FILE)
     if use_cuda:
@@ -117,6 +84,5 @@ if __name__ == "__main__":
     Path(args.output_folder).mkdir(parents=True, exist_ok=True)
 
     generate_features(args.tracklets_folder, args.output_folder)
-
 
 
