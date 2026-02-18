@@ -43,6 +43,7 @@ def generate_features(input_folder, output_folder, model_version='res50_market')
     cfg.merge_from_list(opts)
     
     use_cuda = True if torch.cuda.is_available() and cfg.GPU_IDS else False
+    print(f"Loading model from {cfg.MODEL.PRETRAIN_PATH}...")
     model = CTLModel.load_from_checkpoint(cfg.MODEL.PRETRAIN_PATH, cfg=cfg)
 
     # print("Loading from " + MODEL_FILE)
@@ -50,11 +51,11 @@ def generate_features(input_folder, output_folder, model_version='res50_market')
         model.to('cuda')
         print("using GPU")
     model.eval()
-
     tracks = os.listdir(input_folder)
+    print("ReidTransorms...")
     transforms_base = ReidTransforms(cfg)
     val_transforms = transforms_base.build_transforms(is_train=False)
-
+    print("Generating features...")
     for track in tqdm(tracks):
         features = []
         track_path = os.path.join(input_folder, track)
