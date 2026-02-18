@@ -344,13 +344,14 @@ def test_model(model, subset, result_path=None):
 
 
 # run inference on a list of files
-def run(image_paths, model_path, threshold=0.5, arch='resnet18', batch_size=32, num_workers=2):
+def run(image_paths, model_path, threshold=0.5, arch='resnet18', batch_size=128, num_workers=2):
     # setup data
     dataset = UnlabelledJerseyNumberLegibilityDataset(image_paths, arch=arch)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
                                                   shuffle=False, num_workers=num_workers, 
                                                   pin_memory=True if torch.cuda.is_available() else False)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
     cudnn.benchmark = True
 
     #load model
@@ -370,27 +371,24 @@ def run(image_paths, model_path, threshold=0.5, arch='resnet18', batch_size=32, 
 
     # run classifier
     results = []
-    for inputs in dataloader:
-        # print(f"input and label sizes:{len(inputs), len(labels)}")
-        inputs = inputs.to(device)
+    with torch.no_grad():
+        for inputs in dataloader:
+            inputs = inputs.to(device, non_blocking=True)
+            outputs = model_ft(inputs)
 
-        # zero the parameter gradients
-        torch.set_grad_enabled(False)
-        outputs = model_ft(inputs)
-
-        if threshold > 0:
-            outputs = (outputs>threshold).float()
-        else:
-            outputs = outputs.float()
-        preds = outputs.cpu().detach().numpy()
-        flattened_preds = preds.flatten().tolist()
-        results += flattened_preds
+            if threshold > 0:
+                outputs = (outputs>threshold).float()
+            else:
+                outputs = outputs.float()
+            preds = outputs.cpu().detach().numpy()
+            flattened_preds = preds.flatten().tolist()
+            results += flattened_preds
 
     return results
 
 
 # Batch process multiple tracklets efficiently with a single model load
-def run_batch_tracklets(tracklet_dict, model_path, threshold=0.5, arch='resnet18', batch_size=32, num_workers=2):
+def run_batch_tracklets(tracklet_dict, model_path, threshold=0.5, arch='resnet18', batch_size=128, num_workers=2):
     """
     Process multiple tracklets efficiently in batches.
     
@@ -399,13 +397,17 @@ def run_batch_tracklets(tracklet_dict, model_path, threshold=0.5, arch='resnet18
         model_path: Path to model weights
         threshold: Classification threshold
         arch: Model architecture
-        batch_size: Batch size for processing
+        batch_size: Batch size for processing (default: 128)
         num_workers: Number of data loader workers
     
     Returns:
         Dictionary mapping tracklet_id -> list of predictions
     """
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+    if torch.cuda.is_available():
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
+        print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.2f} GB")
     cudnn.benchmark = True
     
     # Load model once
@@ -441,10 +443,17 @@ def run_batch_tracklets(tracklet_dict, model_path, threshold=0.5, arch='resnet18
                                             shuffle=False, num_workers=num_workers,
                                             pin_memory=True if torch.cuda.is_available() else False)
     
+    print(f"Processing {len(all_images)} images in batches of {batch_size} ({len(dataloader)} batches total)")
+    
     all_results = []
     with torch.no_grad():
-        for inputs in tqdm(dataloader, desc="Processing batches"):
-            inputs = inputs.to(device)
+        for batch_idx, inputs in enumerate(tqdm(dataloader, desc="Processing batches")):
+            inputs = inputs.to(device, non_blocking=True)
+            
+            # Verify GPU usage on first batch
+            if batch_idx == 0 and torch.cuda.is_available():
+                print(f"First batch on device: {inputs.device}, shape: {inputs.shape}")
+            
             outputs = model_ft(inputs)
             
             if threshold > 0:

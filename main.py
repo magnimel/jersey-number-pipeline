@@ -8,12 +8,12 @@ from tqdm import tqdm
 import configuration as config
 from pathlib import Path
 
-def get_soccer_net_raw_legibility_results(args, use_filtered = True, filter = 'gauss', exclude_balls=True, batch_size=32, num_workers=2):
+def get_soccer_net_raw_legibility_results(args, use_filtered = True, filter = 'gauss', exclude_balls=True, batch_size=128, num_workers=2):
     """
     Optimized version that processes all tracklets in batches.
     
     Args:
-        batch_size: Batch size for processing (default 32, increase for better GPU utilization)
+        batch_size: Batch size for processing (default 128, increase for better GPU utilization)
         num_workers: Number of dataloader workers (default 2 for Windows compatibility)
     """
     root_dir = config.dataset['SoccerNet']['root_dir']
@@ -123,12 +123,12 @@ def get_soccer_net_raw_legibility_results_old(args, use_filtered = True, filter 
 
     return results_dict
 
-def get_soccer_net_legibility_results(args, use_filtered = False, filter = 'sim', exclude_balls=True, batch_size=32, num_workers=2):
+def get_soccer_net_legibility_results(args, use_filtered = False, filter = 'sim', exclude_balls=True, batch_size=128, num_workers=2):
     """
     Optimized version that processes all tracklets in batches.
     
     Args:
-        batch_size: Batch size for processing (default 32, increase for better GPU utilization)
+        batch_size: Batch size for processing (default 128, increase for better GPU utilization)
         num_workers: Number of dataloader workers (default 2 for Windows compatibility)
     """
     root_dir = config.dataset['SoccerNet']['root_dir']
