@@ -25,6 +25,8 @@ def get_conda_envs():
     stream = os.popen("conda env list")
     output = stream.read()
     a = output.split()
+    print("OUTPUT", output)
+    print("a=", a)
     a.remove("*")
     a.remove("#")
     a.remove("#")
@@ -151,7 +153,7 @@ def setup_sam(root_dir):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('dataset', default='all', help="Options: all, SoccerNet, Hockey")
-
+    
     args = parser.parse_args()
 
     root_dir = os.getcwd()
