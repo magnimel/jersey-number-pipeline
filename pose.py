@@ -3,8 +3,10 @@ import os
 import warnings
 import json
 import sys
+import gc
 import numpy as np
 import torch
+from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
 ROOT = './pose/ViTPose/'
@@ -14,7 +16,6 @@ from argparse import ArgumentParser
 
 from xtcocotools.coco import COCO
 import mmcv
-from mmcv.parallel import collate, scatter
 
 from mmpose.apis import init_pose_model, vis_pose_result
 from mmpose.datasets import DatasetInfo
@@ -67,68 +68,107 @@ def build_test_pipeline(cfg):
     return Compose(test_pipeline)
 
 
-def iter_data_items(cfg, coco, img_root, dataset, flip_pairs):
-    """Yield (data_dict, image_id, file_name) lazily — no list kept in memory."""
-    img_keys = list(coco.imgs.keys())
+class PoseDataset(Dataset):
+    """Map-style dataset that loads & preprocesses one crop per __getitem__.
 
-    for image_id in img_keys:
-        image = coco.loadImgs(image_id)[0]
-        image_name = os.path.join(img_root, image['file_name'])
-        ann_ids = coco.getAnnIds(image_id)
+    Workers in the DataLoader call __getitem__ in parallel, so image I/O
+    and the augmentation pipeline run on 2 CPU processes concurrently while
+    the main process drives the GPU.
+    """
 
-        if not ann_ids:
-            continue
+    def __init__(self, cfg, coco, img_root, dataset, flip_pairs, pipeline):
+        self.cfg = cfg
+        self.img_root = img_root
+        self.dataset = dataset
+        self.flip_pairs = flip_pairs
+        self.pipeline = pipeline
 
-        ann = coco.anns[ann_ids[0]]
-        x, y, w, h = ann['bbox']
-        center, scale = _xywh2cs(cfg, x, y, w, h)
+        # Build a flat index: list of (image_id, file_name, bbox)
+        self.items = []
+        for image_id in coco.imgs:
+            image = coco.loadImgs(image_id)[0]
+            ann_ids = coco.getAnnIds(image_id)
+            if not ann_ids:
+                continue
+            ann = coco.anns[ann_ids[0]]
+            self.items.append((
+                image_id,
+                image['file_name'],
+                ann['bbox'],  # [x, y, w, h]
+            ))
+
+    def __len__(self):
+        return len(self.items)
+
+    def __getitem__(self, idx):
+        image_id, file_name, bbox = self.items[idx]
+        image_path = os.path.join(self.img_root, file_name)
+        x, y, w, h = bbox
+        center, scale = _xywh2cs(self.cfg, x, y, w, h)
 
         data = {
-            'img_or_path': image_name,
+            'img_or_path': image_path,
             'center': center,
             'scale': scale,
             'bbox_score': 1.0,
             'bbox_id': 0,
-            'dataset': dataset,
+            'dataset': self.dataset,
             'joints_3d': np.zeros(
-                (cfg.data_cfg['num_joints'], 3), dtype=np.float32),
+                (self.cfg.data_cfg['num_joints'], 3), dtype=np.float32),
             'joints_3d_visible': np.zeros(
-                (cfg.data_cfg['num_joints'], 3), dtype=np.float32),
+                (self.cfg.data_cfg['num_joints'], 3), dtype=np.float32),
             'rotation': 0,
             'ann_info': {
-                'image_size': np.array(cfg.data_cfg['image_size']),
-                'num_joints': cfg.data_cfg['num_joints'],
-                'flip_pairs': flip_pairs,
+                'image_size': np.array(self.cfg.data_cfg['image_size']),
+                'num_joints': self.cfg.data_cfg['num_joints'],
+                'flip_pairs': self.flip_pairs,
             },
         }
 
-        yield data, image_id, image['file_name']
+        processed = self.pipeline(data)
+
+        # Return the tensor + metadata separately so collation works
+        return {
+            'img': processed['img'],
+            'img_metas': processed['img_metas'].data,
+            'image_id': image_id,
+            'file_name': file_name,
+        }
 
 
-def run_streaming_inference(pose_model, pipeline, data_iter, total,
-                            device, batch_size=64, use_fp16=False,
-                            out_json=''):
-    """Run pose inference in a streaming fashion.
+def pose_collate_fn(batch):
+    """Custom collate: stack img tensors, keep metas as list."""
+    imgs = torch.stack([item['img'] for item in batch], dim=0)
+    img_metas = [item['img_metas'] for item in batch]
+    image_ids = [item['image_id'] for item in batch]
+    file_names = [item['file_name'] for item in batch]
+    return {
+        'img': imgs,
+        'img_metas': img_metas,
+        'image_ids': image_ids,
+        'file_names': file_names,
+    }
 
-    Images are loaded, preprocessed, and inferred one batch at a time so
-    only `batch_size` images are ever resident in RAM simultaneously.
-    Results are flushed to disk incrementally to avoid accumulating a
-    huge list in memory.
+
+def run_dataloader_inference(pose_model, dataloader, total, device,
+                             use_fp16=False, out_json=''):
+    """GPU inference loop driven by a multi-worker DataLoader.
+
+    While the GPU processes batch N, the DataLoader workers are already
+    loading and preprocessing batch N+1 on the CPU — no idle time.
+    Results are flushed to disk incrementally.
     """
-    import gc
-
-    results_buf = []      # small buffer, flushed periodically
     total_written = 0
-    flush_every = 2000    # write to disk every N results
+    results_buf = []
+    flush_every = 2000
 
-    # Open output file for incremental JSON writing
     out_fp = None
     if out_json:
         out_fp = open(out_json, 'w')
         out_fp.write('{"pose_results": [\n')
 
     def flush_results():
-        nonlocal total_written, results_buf
+        nonlocal total_written
         if not out_fp or not results_buf:
             return
         for r in results_buf:
@@ -139,93 +179,48 @@ def run_streaming_inference(pose_model, pipeline, data_iter, total,
         out_fp.flush()
         results_buf.clear()
 
-    pbar = tqdm(total=total, desc="Pose (stream)")
-    batch_data_list = []
-    batch_meta = []
+    pbar = tqdm(total=total, desc="Pose inference")
 
-    for data, image_id, file_name in data_iter:
-        # Preprocess one item
-        proc = pipeline(data)
-        batch_data_list.append(proc)
-        batch_meta.append((image_id, file_name))
-
-        if len(batch_data_list) < batch_size:
-            continue
-
-        # ---- Run one batch ----
-        batch = collate(batch_data_list, samples_per_gpu=len(batch_data_list))
-        batch = scatter(batch, [device])[0]
+    for batch in dataloader:
+        imgs = batch['img'].to(device, non_blocking=True)
+        img_metas = batch['img_metas']
+        image_ids = batch['image_ids']
+        file_names = batch['file_names']
 
         with torch.no_grad():
             if use_fp16:
                 with torch.cuda.amp.autocast():
                     output = pose_model(
-                        img=batch['img'],
-                        img_metas=batch['img_metas'],
+                        img=imgs,
+                        img_metas=img_metas,
                         return_loss=False,
                         return_heatmap=False)
             else:
                 output = pose_model(
-                    img=batch['img'],
-                    img_metas=batch['img_metas'],
+                    img=imgs,
+                    img_metas=img_metas,
                     return_loss=False,
                     return_heatmap=False)
 
-        keypoint_preds = output['preds']
+        keypoint_preds = output['preds']  # numpy array (N, num_joints, 3)
 
-        for j, (img_id, fname) in enumerate(batch_meta):
+        for j in range(len(image_ids)):
             results_buf.append({
-                'img_name': fname,
-                'id': img_id,
+                'img_name': file_names[j],
+                'id': image_ids[j],
                 'keypoints': keypoint_preds[j].tolist(),
             })
 
-        pbar.update(len(batch_data_list))
+        pbar.update(len(image_ids))
 
-        # Free batch memory
-        del batch, output, keypoint_preds, batch_data_list, batch_meta
-        batch_data_list = []
-        batch_meta = []
+        del imgs, output, keypoint_preds
 
         if len(results_buf) >= flush_every:
             flush_results()
             gc.collect()
 
-    # ---- Handle last partial batch ----
-    if batch_data_list:
-        batch = collate(batch_data_list, samples_per_gpu=len(batch_data_list))
-        batch = scatter(batch, [device])[0]
-
-        with torch.no_grad():
-            if use_fp16:
-                with torch.cuda.amp.autocast():
-                    output = pose_model(
-                        img=batch['img'],
-                        img_metas=batch['img_metas'],
-                        return_loss=False,
-                        return_heatmap=False)
-            else:
-                output = pose_model(
-                    img=batch['img'],
-                    img_metas=batch['img_metas'],
-                    return_loss=False,
-                    return_heatmap=False)
-
-        keypoint_preds = output['preds']
-
-        for j, (img_id, fname) in enumerate(batch_meta):
-            results_buf.append({
-                'img_name': fname,
-                'id': img_id,
-                'keypoints': keypoint_preds[j].tolist(),
-            })
-
-        pbar.update(len(batch_data_list))
-        del batch, output, keypoint_preds
-
     pbar.close()
 
-    # Final flush
     flush_results()
     if out_fp:
         out_fp.write('\n]}')
@@ -261,6 +256,9 @@ def main():
         help='Batch size for inference (default: 64). '
              'Reduce if running out of GPU memory.')
     parser.add_argument(
+        '--num-workers', type=int, default=2,
+        help='Number of DataLoader workers for parallel image loading.')
+    parser.add_argument(
         '--fp16', action='store_true', default=False,
         help='Use FP16 mixed precision for faster inference on GPU')
     parser.add_argument(
@@ -277,11 +275,11 @@ def main():
 
     coco = COCO(args.json_file)
 
-    # Build the pose model from a config file and a checkpoint file
+    # Build the pose model
     pose_model = init_pose_model(
         args.pose_config, args.pose_checkpoint, device=args.device.lower())
 
-    dataset = pose_model.cfg.data['test']['type']
+    dataset_name = pose_model.cfg.data['test']['type']
     dataset_info = pose_model.cfg.data['test'].get('dataset_info', None)
     if dataset_info is None:
         warnings.warn(
@@ -296,24 +294,34 @@ def main():
     cfg = pose_model.cfg
     device = next(pose_model.parameters()).device
 
-    # Build preprocessing pipeline
+    # Build pipeline & dataset
     pipeline = build_test_pipeline(cfg)
+    pose_dataset = PoseDataset(
+        cfg, coco, args.img_root, dataset_name, flip_pairs, pipeline)
 
-    # Count total items (lazy — just count annotated images)
-    img_keys = list(coco.imgs.keys())
-    total = sum(1 for k in img_keys if coco.getAnnIds(k))
-    print(f"Processing {total} images (streaming, batch_size={args.batch_size})...")
+    total = len(pose_dataset)
+    print(f"Processing {total} images "
+          f"(batch_size={args.batch_size}, workers={args.num_workers}, "
+          f"fp16={args.fp16})...")
 
-    # Create lazy data iterator (no list in memory)
-    data_iter = iter_data_items(cfg, coco, args.img_root, dataset, flip_pairs)
+    # DataLoader: workers load+preprocess images while GPU runs inference
+    dataloader = DataLoader(
+        pose_dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.num_workers,
+        collate_fn=pose_collate_fn,
+        pin_memory=True,
+        prefetch_factor=2,
+        persistent_workers=True if args.num_workers > 0 else False,
+    )
 
-    # Run streaming batched inference — writes results to disk incrementally
-    run_streaming_inference(
-        pose_model, pipeline, data_iter, total, device,
-        batch_size=args.batch_size, use_fp16=args.fp16,
-        out_json=args.out_json)
+    # Run pipelined inference
+    run_dataloader_inference(
+        pose_model, dataloader, total, device,
+        use_fp16=args.fp16, out_json=args.out_json)
 
-    # Optional visualization (reads back from saved JSON)
+    # Optional visualization
     if args.show or args.out_img_root != '':
         print("Generating visualizations...")
         with open(args.out_json, 'r') as fp:
@@ -335,7 +343,7 @@ def main():
                 pose_model,
                 image_name,
                 pose_results,
-                dataset=dataset,
+                dataset=dataset_name,
                 dataset_info=dataset_info,
                 kpt_score_thr=args.kpt_thr,
                 radius=args.radius,
