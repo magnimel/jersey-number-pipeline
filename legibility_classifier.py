@@ -443,7 +443,7 @@ def run_batch_tracklets(tracklet_dict, model_path, threshold=0.5, arch='resnet18
     
     all_results = []
     with torch.no_grad():
-        for inputs in dataloader:
+        for inputs in tqdm(dataloader, desc="Processing batches"):
             inputs = inputs.to(device)
             outputs = model_ft(inputs)
             
