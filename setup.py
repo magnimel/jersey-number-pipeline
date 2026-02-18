@@ -27,11 +27,12 @@ def get_conda_envs():
     a = output.split()
     print("OUTPUT", output)
     print("a=", a)
-    a.remove("*")
-    a.remove("#")
-    a.remove("#")
-    a.remove("conda")
-    a.remove("environments:")
+    
+    # Remove markers if they exist
+    for item in ["*", "#", "conda", "environments:"]:
+        while item in a:
+            a.remove(item)
+    
     return a[::2]
 ###########################################
 
