@@ -344,7 +344,7 @@ def test_model(model, subset, result_path=None):
 
 
 # run inference on a list of files
-def run(image_paths, model_path, threshold=0.5, arch='resnet18', batch_size=128, num_workers=2):
+def run(image_paths, model_path, threshold=0.5, arch='resnet18', batch_size=512, num_workers=2):
     # setup data
     dataset = UnlabelledJerseyNumberLegibilityDataset(image_paths, arch=arch)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
@@ -388,7 +388,7 @@ def run(image_paths, model_path, threshold=0.5, arch='resnet18', batch_size=128,
 
 
 # Batch process multiple tracklets efficiently with a single model load
-def run_batch_tracklets(tracklet_dict, model_path, threshold=0.5, arch='resnet18', batch_size=128, num_workers=2):
+def run_batch_tracklets(tracklet_dict, model_path, threshold=0.5, arch='resnet18', batch_size=512, num_workers=2):
     """
     Process multiple tracklets efficiently in batches.
     
@@ -397,7 +397,7 @@ def run_batch_tracklets(tracklet_dict, model_path, threshold=0.5, arch='resnet18
         model_path: Path to model weights
         threshold: Classification threshold
         arch: Model architecture
-        batch_size: Batch size for processing (default: 128)
+        batch_size: Batch size for processing (default: 512)
         num_workers: Number of data loader workers
     
     Returns:
