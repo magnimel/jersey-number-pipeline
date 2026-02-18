@@ -8,6 +8,7 @@ sys.path.append(str(ROOT))  # add ROOT to PATH
 
 import numpy as np
 import torch
+import torch.backends.cudnn as cudnn
 from tqdm import tqdm
 import cv2
 from PIL import Image
@@ -122,6 +123,7 @@ def generate_features(input_folder, output_folder, model_version='res50_market',
 
     if use_cuda:
         model.to('cuda')
+        cudnn.benchmark = True  # Enable cuDNN auto-tuner for faster convolutions
         print("using GPU")
     model.eval()
     
@@ -150,7 +152,9 @@ def generate_features(input_folder, output_folder, model_version='res50_market',
         batch_size=batch_size, 
         shuffle=False,
         num_workers=num_workers,
-        pin_memory=use_cuda
+        pin_memory=use_cuda,
+        persistent_workers=num_workers > 0,  # Keep workers alive between iterations
+        prefetch_factor=4 if num_workers > 0 else None  # Preload 4 batches per worker
     )
     
     # Process all images in batches
