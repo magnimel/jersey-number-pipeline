@@ -263,7 +263,7 @@ def train_parseq(args):
         current_dir = os.getcwd()
         os.chdir(parseq_dir)
         data_root = os.path.join(current_dir, config.dataset['Hockey']['root_dir'], config.dataset['Hockey']['numbers_data'])
-        command = f"conda run -n {config.str_env} python3 train.py +experiment=parseq dataset=real data.root_dir={data_root} trainer.max_epochs=25 " \
+        command = f"conda run -n {config.str_env} --no-capture-output python3 train.py +experiment=parseq dataset=real data.root_dir={data_root} trainer.max_epochs=25 " \
                   f"pretrained=parseq trainer.devices=1 trainer.val_check_interval=1 data.batch_size=128 data.max_label_length=2"
         success = os.system(command) == 0
         os.chdir(current_dir)
@@ -274,7 +274,7 @@ def train_parseq(args):
         current_dir = os.getcwd()
         os.chdir(parseq_dir)
         data_root = os.path.join(current_dir, config.dataset['SoccerNet']['root_dir'], config.dataset['SoccerNet']['numbers_data'])
-        command = f"conda run -n {config.str_env} python3 train.py +experiment=parseq dataset=real data.root_dir={data_root} trainer.max_epochs=25 " \
+        command = f"conda run -n {config.str_env} --no-capture-output python3 train.py +experiment=parseq dataset=real data.root_dir={data_root} trainer.max_epochs=25 " \
                   f"pretrained=parseq trainer.devices=1 trainer.val_check_interval=1 data.batch_size=128 data.max_label_length=2"
         success = os.system(command) == 0
         os.chdir(current_dir)
@@ -300,7 +300,7 @@ def hockey_pipeline(args):
         print("Predict numbers")
         current_dir = os.getcwd()
         data_root = os.path.join(current_dir, config.dataset['Hockey']['root_dir'], config.dataset['Hockey']['numbers_data'])
-        command = f"conda run -n {config.str_env} python3 str.py  {config.dataset['Hockey']['str_model']}\
+        command = f"conda run -n {config.str_env} --no-capture-output python3 str.py  {config.dataset['Hockey']['str_model']}\
             --data_root={data_root}"
         success = os.system(command) == 0
         print("Done predict numbers")
@@ -336,7 +336,7 @@ def soccer_net_pipeline(args):
     # 1. generate and store features for each image in each tracklet
     if args.pipeline['feat']:
         print("Generate features")
-        command = f"conda run -n {config.reid_env} python3 {config.reid_script} --tracklets_folder {image_dir} --output_folder {features_dir}"
+        command = f"conda run -n {config.reid_env} --no-capture-output python3 {config.reid_script} --tracklets_folder {image_dir} --output_folder {features_dir}"
         success = os.system(command) == 0
         print("Done generating features")
 
@@ -396,7 +396,7 @@ def soccer_net_pipeline(args):
         #5. run pose estimation and store results
         if success:
             print("Detecting pose")
-            command = f"conda run -n {config.pose_env} python3 pose.py {config.pose_home}/configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/ViTPose_huge_coco_256x192.py \
+            command = f"conda run -n {config.pose_env} --no-capture-output python3 pose.py {config.pose_home}/configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/ViTPose_huge_coco_256x192.py \
                 {config.pose_home}/checkpoints/vitpose-h.pth --img-root / --json-file {input_json} \
                 --out-json {output_json}"
             success = os.system(command) == 0
@@ -425,7 +425,7 @@ def soccer_net_pipeline(args):
         print("Predict numbers")
         image_dir = os.path.join(config.dataset['SoccerNet']['working_dir'], config.dataset['SoccerNet'][args.part]['crops_folder'])
 
-        command = f"conda run -n {config.str_env} python3 str.py  {config.dataset['SoccerNet']['str_model']}\
+        command = f"conda run -n {config.str_env} --no-capture-output python3 str.py  {config.dataset['SoccerNet']['str_model']}\
             --data_root={image_dir} --batch_size=1 --inference --result_file {str_result_file}"
         success = os.system(command) == 0
         print("Done predict numbers")
