@@ -67,13 +67,9 @@ def build_test_pipeline(cfg):
     return Compose(test_pipeline)
 
 
-def prepare_data_items(cfg, coco, img_root, dataset, flip_pairs):
-    """Prepare data dicts for all images/annotations.
-
-    Returns a list of (data_dict, image_id, file_name) tuples.
-    """
+def iter_data_items(cfg, coco, img_root, dataset, flip_pairs):
+    """Yield (data_dict, image_id, file_name) lazily — no list kept in memory."""
     img_keys = list(coco.imgs.keys())
-    all_items = []
 
     for image_id in img_keys:
         image = coco.loadImgs(image_id)[0]
@@ -83,7 +79,6 @@ def prepare_data_items(cfg, coco, img_root, dataset, flip_pairs):
         if not ann_ids:
             continue
 
-        # Use first annotation per image (matches original pose_results[0])
         ann = coco.anns[ann_ids[0]]
         x, y, w, h = ann['bbox']
         center, scale = _xywh2cs(cfg, x, y, w, h)
@@ -107,36 +102,57 @@ def prepare_data_items(cfg, coco, img_root, dataset, flip_pairs):
             },
         }
 
-        all_items.append((data, image_id, image['file_name']))
-
-    return all_items
+        yield data, image_id, image['file_name']
 
 
-def run_batched_inference(pose_model, pipeline, all_items, device,
-                          batch_size=64, use_fp16=False):
-    """Run pose inference in batches across all images.
+def run_streaming_inference(pose_model, pipeline, data_iter, total,
+                            device, batch_size=64, use_fp16=False,
+                            out_json=''):
+    """Run pose inference in a streaming fashion.
 
-    Instead of processing each image individually (batch_size=1), this
-    collects crops from multiple images and runs them through the model
-    in larger batches for much better GPU utilization.
+    Images are loaded, preprocessed, and inferred one batch at a time so
+    only `batch_size` images are ever resident in RAM simultaneously.
+    Results are flushed to disk incrementally to avoid accumulating a
+    huge list in memory.
     """
-    # Step 1: Preprocess all items through the pipeline
-    print(f"Preprocessing {len(all_items)} items...")
-    processed = []
-    for data, image_id, file_name in tqdm(all_items, desc="Preprocessing"):
+    import gc
+
+    results_buf = []      # small buffer, flushed periodically
+    total_written = 0
+    flush_every = 2000    # write to disk every N results
+
+    # Open output file for incremental JSON writing
+    out_fp = None
+    if out_json:
+        out_fp = open(out_json, 'w')
+        out_fp.write('{"pose_results": [\n')
+
+    def flush_results():
+        nonlocal total_written, results_buf
+        if not out_fp or not results_buf:
+            return
+        for r in results_buf:
+            if total_written > 0:
+                out_fp.write(',\n')
+            json.dump(r, out_fp)
+            total_written += 1
+        out_fp.flush()
+        results_buf.clear()
+
+    pbar = tqdm(total=total, desc="Pose (stream)")
+    batch_data_list = []
+    batch_meta = []
+
+    for data, image_id, file_name in data_iter:
+        # Preprocess one item
         proc = pipeline(data)
-        processed.append((proc, image_id, file_name))
+        batch_data_list.append(proc)
+        batch_meta.append((image_id, file_name))
 
-    # Step 2: Run inference in batches
-    results = []
-    num_batches = (len(processed) + batch_size - 1) // batch_size
-    print(f"Running inference: {num_batches} batches (batch_size={batch_size})...")
+        if len(batch_data_list) < batch_size:
+            continue
 
-    for i in tqdm(range(0, len(processed), batch_size), desc="Batch inference"):
-        batch_items = processed[i:i + batch_size]
-        batch_data_list = [item[0] for item in batch_items]
-        batch_meta = [(item[1], item[2]) for item in batch_items]
-
+        # ---- Run one batch ----
         batch = collate(batch_data_list, samples_per_gpu=len(batch_data_list))
         batch = scatter(batch, [device])[0]
 
@@ -155,16 +171,68 @@ def run_batched_inference(pose_model, pipeline, all_items, device,
                     return_loss=False,
                     return_heatmap=False)
 
-        keypoint_preds = output['preds']  # (N, num_joints, 3)
+        keypoint_preds = output['preds']
 
-        for j, (image_id, file_name) in enumerate(batch_meta):
-            results.append({
-                'img_name': file_name,
-                'id': image_id,
+        for j, (img_id, fname) in enumerate(batch_meta):
+            results_buf.append({
+                'img_name': fname,
+                'id': img_id,
                 'keypoints': keypoint_preds[j].tolist(),
             })
 
-    return results
+        pbar.update(len(batch_data_list))
+
+        # Free batch memory
+        del batch, output, keypoint_preds, batch_data_list, batch_meta
+        batch_data_list = []
+        batch_meta = []
+
+        if len(results_buf) >= flush_every:
+            flush_results()
+            gc.collect()
+
+    # ---- Handle last partial batch ----
+    if batch_data_list:
+        batch = collate(batch_data_list, samples_per_gpu=len(batch_data_list))
+        batch = scatter(batch, [device])[0]
+
+        with torch.no_grad():
+            if use_fp16:
+                with torch.cuda.amp.autocast():
+                    output = pose_model(
+                        img=batch['img'],
+                        img_metas=batch['img_metas'],
+                        return_loss=False,
+                        return_heatmap=False)
+            else:
+                output = pose_model(
+                    img=batch['img'],
+                    img_metas=batch['img_metas'],
+                    return_loss=False,
+                    return_heatmap=False)
+
+        keypoint_preds = output['preds']
+
+        for j, (img_id, fname) in enumerate(batch_meta):
+            results_buf.append({
+                'img_name': fname,
+                'id': img_id,
+                'keypoints': keypoint_preds[j].tolist(),
+            })
+
+        pbar.update(len(batch_data_list))
+        del batch, output, keypoint_preds
+
+    pbar.close()
+
+    # Final flush
+    flush_results()
+    if out_fp:
+        out_fp.write('\n]}')
+        out_fp.close()
+
+    print(f"Wrote {total_written} results to {out_json}")
+    return total_written
 
 
 def main():
@@ -228,23 +296,30 @@ def main():
     cfg = pose_model.cfg
     device = next(pose_model.parameters()).device
 
-    # Prepare all data items
-    all_items = prepare_data_items(
-        cfg, coco, args.img_root, dataset, flip_pairs)
-    print(f"Processing {len(all_items)} images...")
-
     # Build preprocessing pipeline
     pipeline = build_test_pipeline(cfg)
 
-    # Run batched inference
-    results = run_batched_inference(
-        pose_model, pipeline, all_items, device,
-        batch_size=args.batch_size, use_fp16=args.fp16)
+    # Count total items (lazy — just count annotated images)
+    img_keys = list(coco.imgs.keys())
+    total = sum(1 for k in img_keys if coco.getAnnIds(k))
+    print(f"Processing {total} images (streaming, batch_size={args.batch_size})...")
 
-    # Optional visualization (per-image, only when explicitly requested)
+    # Create lazy data iterator (no list in memory)
+    data_iter = iter_data_items(cfg, coco, args.img_root, dataset, flip_pairs)
+
+    # Run streaming batched inference — writes results to disk incrementally
+    run_streaming_inference(
+        pose_model, pipeline, data_iter, total, device,
+        batch_size=args.batch_size, use_fp16=args.fp16,
+        out_json=args.out_json)
+
+    # Optional visualization (reads back from saved JSON)
     if args.show or args.out_img_root != '':
         print("Generating visualizations...")
-        for i, result in enumerate(tqdm(results, desc="Visualization")):
+        with open(args.out_json, 'r') as fp:
+            saved = json.load(fp)
+        for i, result in enumerate(tqdm(saved['pose_results'],
+                                        desc="Visualization")):
             image_name = os.path.join(args.img_root, result['img_name'])
             pose_results = [{
                 'keypoints': np.array(result['keypoints']),
@@ -267,11 +342,6 @@ def main():
                 thickness=args.thickness,
                 show=args.show,
                 out_file=out_file)
-
-    # Save results to JSON
-    if args.out_json != '':
-        with open(args.out_json, 'w') as fp:
-            json.dump({"pose_results": results}, fp)
 
 
 if __name__ == '__main__':
