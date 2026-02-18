@@ -3,6 +3,7 @@ import os
 import warnings
 import json
 import sys
+from tqdm import tqdm
 
 ROOT = './pose/ViTPose/'
 sys.path.append(str(ROOT))  # add ROOT to PATH
@@ -92,7 +93,8 @@ def main():
     results = []
 
     # process each image
-    for i in range(len(img_keys)):
+    print(f"Processing {len(img_keys)} images...")
+    for i in tqdm(range(len(img_keys)), desc="Pose detection"):
         # get bounding box annotations
         image_id = img_keys[i]
         image = coco.loadImgs(image_id)[0]
