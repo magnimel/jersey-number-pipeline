@@ -4,17 +4,38 @@ import json
 import urllib.request
 import gdown
 import argparse
-import subprocess
 
 
-###### Colab setup utils ##############
+###### common setup utils ##############
 
-def run_pip_install(packages):
-    """Install packages using uv"""
-    os.system(f"uv pip install {packages}")
+def make_conda_env(env_name, libs=""):
+    os.system(f"conda create -n {env_name} -y "+libs)
+
+def activate_conda_env(env_name):
+    os.system(f"conda activate {env_name}")
+
+def deactivate_conda_env(env_name):
+    os.system(f"conda deactivate")
+
+def conda_pyrun(env_name, exec_file, args):
+    os.system(f"conda run -n {env_name} --live-stream python3 \"{exec_file}\" '{json.dumps(dict(vars(args)))}'")
+
+
+def get_conda_envs():
+    stream = os.popen("conda env list")
+    output = stream.read()
+    a = output.split()
+    a.remove("*")
+    a.remove("#")
+    a.remove("#")
+    a.remove("conda")
+    a.remove("environments:")
+    return a[::2]
+###########################################
 
 
 def setup_reid(root):
+    env_name  = cfg.reid_env
     repo_name = "centroids-reid"
     src_url   = "https://github.com/mikwieczorek/centroids-reid.git"
     rep_path  = "./reid"
@@ -35,12 +56,19 @@ def setup_reid(root):
         save_path = os.path.join(models_folder_path, "market1501_resnet50_256_128_epoch_120.ckpt")
         urllib.request.urlretrieve(url, save_path)
 
-        # Skip requirements installation - centroids-reid requires torch==1.7.1+cu101 which is
-        # incompatible with Python 3.12. The reid module can be used with the current PyTorch
-        # version already installed, or this functionality can be skipped for Python 3.12.
-        # print("Note: Skipping centroids-reid requirements (requires PyTorch 1.7.1, incompatible with Python 3.12)")
+    if not env_name in get_conda_envs():
+        make_conda_env(env_name, libs="python=3.8")
+        cwd = os.getcwd()
+        os.chdir(os.path.join(rep_path, repo_name))
+        os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip")
+        os.system(f"conda run --live-stream -n {env_name} pip install -r requirements.txt")
 
+        os.chdir(cwd)
+
+# clone and install vitpose
+# download the model
 def setup_pose(root):
+    env_name  = cfg.pose_env
     repo_name = "ViTPose"
     src_url   = "https://github.com/ViTAE-Transformer/ViTPose.git"
     rep_path  = "./pose"
@@ -52,26 +80,21 @@ def setup_pose(root):
         os.system(f"git clone --recurse-submodules {src_url} {os.path.join(rep_path,repo_name)}")
 
     os.chdir(root)
-    cwd = os.getcwd()
-    
-    # Upgrade setuptools FIRST to fix Python 3.12 compatibility globally
-    run_pip_install("--upgrade setuptools>=70.0.0 pip")
-    
-    # Install mmcv directly instead of using mim (avoids setuptools compatibility issues)
-    # Using mmcv-full for GPU support
-    run_pip_install("mmcv")
-    
-    os.chdir(os.path.join(root, rep_path, "ViTPose"))
-    # Install with no-build-isolation to avoid chumpy build issues
-    os.system(f"uv pip install -v -e . --no-build-isolation")
-    run_pip_install("timm==0.4.9 einops")
-    
-    os.chdir(cwd)
+    if not env_name in get_conda_envs():
+        make_conda_env(env_name, libs="python=3.8")
+
+        os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip")
+        os.system(f"conda run --live-stream -n {env_name} pip install  mmcv-full==1.4.8 -f https://download.openmmlab.com/mmcv/dist/cu111/torch1.9.0/index.html")
+
+        os.chdir(os.path.join(root, rep_path, "ViTPose"))
+        os.system(f"conda run --live-stream -n {env_name} pip install -v -e .")
+        os.system(f"conda run --live-stream -n {env_name} pip install timm==0.4.9 einops")
 
 
 # clone and install str
 # download the model
 def setup_str(root):
+    env_name  = cfg.str_env
     repo_name = "parseq"
     src_url   = "https://github.com/baudm/parseq.git"
     rep_path  = "./str"
@@ -82,18 +105,13 @@ def setup_str(root):
         os.system(f"git clone --recurse-submodules {src_url} {os.path.join(rep_path, repo_name)}")
 
     os.chdir(os.path.join(rep_path, repo_name))
-    
-    # Install torch with CUDA support for Colab
-    # Use unsafe-best-match to allow fallback to PyPI for packages not in PyTorch index
-    # run_pip_install("torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu117 --index-strategy unsafe-best-match")
-    
-    # Upgrade setuptools first to fix pywavelets build issue with Python 3.12
-    run_pip_install("--upgrade setuptools>=70.0.0")
-    
-    # Install other requirements
-    os.system("uv pip install -r requirements/core.txt")
-    os.system("uv pip install -e .[train,test]")
-    
+
+    if not env_name in get_conda_envs():
+        make_conda_env(env_name, libs="python=3.9")
+        os.system(f"make torch-cu117")
+        os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip")
+        os.system(f"conda run --live-stream -n {env_name} pip install -r requirements/core.cu117.txt -e .[train,test]")
+
     os.chdir(root)
 
 def download_models_common(root_dir):
