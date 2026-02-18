@@ -8,7 +8,74 @@ from tqdm import tqdm
 import configuration as config
 from pathlib import Path
 
-def get_soccer_net_raw_legibility_results(args, use_filtered = True, filter = 'gauss', exclude_balls=True):
+def get_soccer_net_raw_legibility_results(args, use_filtered = True, filter = 'gauss', exclude_balls=True, batch_size=32, num_workers=2):
+    """
+    Optimized version that processes all tracklets in batches.
+    
+    Args:
+        batch_size: Batch size for processing (default 32, increase for better GPU utilization)
+        num_workers: Number of dataloader workers (default 2 for Windows compatibility)
+    """
+    root_dir = config.dataset['SoccerNet']['root_dir']
+    image_dir = config.dataset['SoccerNet'][args.part]['images']
+    path_to_images = os.path.join(root_dir, image_dir)
+    tracklets = os.listdir(path_to_images)
+
+    if use_filtered:
+        if filter == 'sim':
+            path_to_filter_results = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                                  config.dataset['SoccerNet'][args.part]['sim_filtered'])
+        else:
+            path_to_filter_results = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                                  config.dataset['SoccerNet'][args.part]['gauss_filtered'])
+        with open(path_to_filter_results, 'r') as f:
+            filtered = json.load(f)
+
+
+    if exclude_balls:
+        updated_tracklets = []
+        soccer_ball_list = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                        config.dataset['SoccerNet'][args.part]['soccer_ball_list'])
+        with open(soccer_ball_list, 'r') as f:
+            ball_json = json.load(f)
+        ball_list = ball_json['ball_tracks']
+        for track in tracklets:
+            if not track in ball_list:
+                updated_tracklets.append(track)
+        tracklets = updated_tracklets
+
+    # Build tracklet dictionary for batch processing
+    print("Preparing tracklet data...")
+    tracklet_dict = {}
+    for directory in tracklets:
+        track_dir = os.path.join(path_to_images, directory)
+        if use_filtered:
+            images = filtered[directory]
+        else:
+            images = os.listdir(track_dir)
+        images_full_path = [os.path.join(track_dir, x) for x in images]
+        tracklet_dict[directory] = images_full_path
+    
+    # Process all tracklets in batches (much faster!)
+    print(f"Classifying Legibility in batches (batch_size={batch_size}, num_workers={num_workers})...")
+    results_dict = lc.run_batch_tracklets(
+        tracklet_dict, 
+        config.dataset['SoccerNet']['legibility_model'], 
+        threshold=-1, 
+        arch=config.dataset['SoccerNet']['legibility_model_arch'],
+        batch_size=batch_size,
+        num_workers=num_workers
+    )
+
+    # save results
+    full_legibile_path = os.path.join(config.dataset['SoccerNet']['working_dir'], config.dataset['SoccerNet'][args.part]['raw_legible_result'])
+    with open(full_legibile_path, "w") as outfile:
+        json.dump(results_dict, outfile)
+
+    return results_dict
+
+def get_soccer_net_raw_legibility_results_old(args, use_filtered = True, filter = 'gauss', exclude_balls=True):
+    """OLD SLOW VERSION - kept for reference"""
     root_dir = config.dataset['SoccerNet']['root_dir']
     image_dir = config.dataset['SoccerNet'][args.part]['images']
     path_to_images = os.path.join(root_dir, image_dir)
@@ -56,7 +123,14 @@ def get_soccer_net_raw_legibility_results(args, use_filtered = True, filter = 'g
 
     return results_dict
 
-def get_soccer_net_legibility_results(args, use_filtered = False, filter = 'sim', exclude_balls=True):
+def get_soccer_net_legibility_results(args, use_filtered = False, filter = 'sim', exclude_balls=True, batch_size=32, num_workers=2):
+    """
+    Optimized version that processes all tracklets in batches.
+    
+    Args:
+        batch_size: Batch size for processing (default 32, increase for better GPU utilization)
+        num_workers: Number of dataloader workers (default 2 for Windows compatibility)
+    """
     root_dir = config.dataset['SoccerNet']['root_dir']
     image_dir = config.dataset['SoccerNet'][args.part]['images']
     path_to_images = os.path.join(root_dir, image_dir)
@@ -87,19 +161,36 @@ def get_soccer_net_legibility_results(args, use_filtered = False, filter = 'sim'
                 updated_tracklets.append(track)
         tracklets = updated_tracklets
 
-
-    for directory in tqdm(tracklets):
+    # Build tracklet dictionary for batch processing
+    print("Preparing tracklet data...")
+    tracklet_dict = {}
+    for directory in tracklets:
         track_dir = os.path.join(path_to_images, directory)
         if use_filtered:
             images = filtered[directory]
         else:
             images = os.listdir(track_dir)
         images_full_path = [os.path.join(track_dir, x) for x in images]
-        track_results = lc.run(images_full_path, config.dataset['SoccerNet']['legibility_model'], arch=config.dataset['SoccerNet']['legibility_model_arch'], threshold=0.5)
+        tracklet_dict[directory] = images_full_path
+    
+    # Process all tracklets in batches (much faster!)
+    print(f"Classifying Legibility in batches (batch_size={batch_size}, num_workers={num_workers})...")
+    results_dict = lc.run_batch_tracklets(
+        tracklet_dict, 
+        config.dataset['SoccerNet']['legibility_model'], 
+        threshold=0.5, 
+        arch=config.dataset['SoccerNet']['legibility_model_arch'],
+        batch_size=batch_size,
+        num_workers=num_workers
+    )
+    
+    # Filter to only legible images
+    for directory, track_results in results_dict.items():
         legible = list(np.nonzero(track_results))[0]
         if len(legible) == 0:
             illegible_tracklets.append(directory)
         else:
+            images_full_path = tracklet_dict[directory]
             legible_images = [images_full_path[i] for i in legible]
             legible_tracklets[directory] = legible_images
 
