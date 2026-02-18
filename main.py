@@ -489,7 +489,7 @@ def soccer_net_pipeline(args):
             print("Detecting pose")
             command = f"conda run -n {config.pose_env} --no-capture-output python3 pose.py {config.pose_home}/configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/ViTPose_huge_coco_256x192.py \
                 {config.pose_home}/checkpoints/vitpose-h.pth --img-root / --json-file {input_json} \
-                --out-json {output_json} --fp16 --num-workers 2"
+                --out-json {output_json} --num-workers 2"
             success = os.system(command) == 0
             print("Done detecting pose")
 
