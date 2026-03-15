@@ -25,11 +25,11 @@ def get_conda_envs():
     stream = os.popen("conda env list")
     output = stream.read()
     a = output.split()
-    a.remove("*")
-    a.remove("#")
-    a.remove("#")
-    a.remove("conda")
-    a.remove("environments:")
+    if "*" in a:
+        a.remove("*")
+    for tok in ["#", "conda", "environments:"]:
+        while tok in a:
+            a.remove(tok)
     return a[::2]
 ###########################################
 
@@ -84,8 +84,10 @@ def setup_pose(root):
         make_conda_env(env_name, libs="python=3.8")
 
         os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip")
-        os.system(f"conda run --live-stream -n {env_name} pip install  mmcv-full==1.4.8 -f https://download.openmmlab.com/mmcv/dist/cu111/torch1.9.0/index.html")
-
+        
+        os.system(f"conda run --live-stream -n {env_name} pip install torch==1.11.0+cu113 torchvision==0.12.0+cu113 -f https://download.pytorch.org/whl/cu113/torch_stable.html")
+        os.system(f"conda run --live-stream -n {env_name} pip install mmcv-full==1.5.0 -f https://download.openmmlab.com/mmcv/dist/cu113/torch1.11.0/index.html")
+        
         os.chdir(os.path.join(root, rep_path, "ViTPose"))
         os.system(f"conda run --live-stream -n {env_name} pip install -v -e .")
         os.system(f"conda run --live-stream -n {env_name} pip install timm==0.4.9 einops")
