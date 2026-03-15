@@ -11,6 +11,7 @@ from utils import util, ssim_psnr
 from IPython import embed
 from torchvision import transforms
 from torch.autograd import Variable
+import torchvision.utils as vutils
 import torch.nn as nn
 from thop import profile
 from PIL import Image
@@ -341,6 +342,9 @@ class TextSR(base.TextBase):
                 preds_size = torch.IntTensor([crnn_output_lr.size(0)] * val_batch_size)
                 pred_str_lr = self.converter_crnn.decode(preds_lr.data, preds_size.data, raw=False)
             print(pred_str_lr, '===>', pred_str_sr)
+            os.makedirs(self.args.vis_dir, exist_ok=True)
+            save_path = os.path.join(self.args.vis_dir, im_name)
+            vutils.save_image(images_sr[:, :3, :, :].data.cpu(), save_path, padding=0, normalize=True)
             torch.cuda.empty_cache()
         sum_images = len(os.listdir(self.args.demo_dir))
         time_end = time.time()

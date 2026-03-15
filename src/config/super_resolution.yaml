@@ -15,7 +15,7 @@ TRAIN:
   workers: 2
   resume: ''
   ckpt_dir: './ckpt/'
-  voc_type: 'all' #'digits lower upper all'
+  voc_type: 'digits' #'digits lower upper all'
   saveInterval: 200
   displayInterval: 100 #display loss
   adadelta: False
