@@ -36,9 +36,9 @@ TRAIN:
     n_vis: 10
     vis_dir: 'demo'
     valInterval: 200 #-1, val at the end of epoch
-    rec_pretrained: 'demo.pth.tar'
-    moran_pretrained: 'moran.pth'
-    crnn_pretrained: 'crnn.pth'
+    rec_pretrained: '../models/demo.pth.tar'
+    moran_pretrained: '../models/moran.pth'
+    crnn_pretrained: '../models/crnn.pth'
 
 TEST:
   checkpoint: ''

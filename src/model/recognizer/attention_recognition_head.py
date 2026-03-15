@@ -109,7 +109,7 @@ class AttentionRecognitionHead(nn.Module):
 
       # Update fields for next timestep
       predecessors = (candidates / self.num_classes + pos_index.expand_as(candidates)).view(batch_size * beam_width, 1)
-      state = state.index_select(1, predecessors.squeeze())
+      state = state.index_select(1, predecessors.squeeze().long())
 
       # Update sequence socres and erase scores for <eos> symbol so that they aren't expanded
       stored_scores.append(sequence_scores.clone())
@@ -141,8 +141,8 @@ class AttentionRecognitionHead(nn.Module):
     t_predecessors = (sorted_idx + pos_index.expand_as(sorted_idx)).view(batch_size * beam_width)
     while t >= 0:
       # Re-order the variables with the back pointer
-      current_symbol = stored_emitted_symbols[t].index_select(0, t_predecessors)
-      t_predecessors = stored_predecessors[t].index_select(0, t_predecessors).squeeze()
+      current_symbol = stored_emitted_symbols[t].index_select(0, t_predecessors.long())
+      t_predecessors = stored_predecessors[t].index_select(0, t_predecessors.long()).squeeze()
       eos_indices = stored_emitted_symbols[t].eq(eos).nonzero()
       if eos_indices.dim() > 0:
         for i in range(eos_indices.size(0)-1, -1, -1):
