@@ -344,12 +344,14 @@ def test_model(model, subset, result_path=None):
 
 
 # run inference on a list of files
-def run(image_paths, model_path, threshold=0.5, arch='resnet18'):
+def run(image_paths, model_path, threshold=0.5, arch='resnet18', batch_size=512, num_workers=2):
     # setup data
     dataset = UnlabelledJerseyNumberLegibilityDataset(image_paths, arch=arch)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=4,
-                                                  shuffle=False, num_workers=4)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
+                                                  shuffle=False, num_workers=num_workers, 
+                                                  pin_memory=True if torch.cuda.is_available() else False)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
     cudnn.benchmark = True
 
     #load model
@@ -369,23 +371,106 @@ def run(image_paths, model_path, threshold=0.5, arch='resnet18'):
 
     # run classifier
     results = []
-    for inputs in dataloader:
-        # print(f"input and label sizes:{len(inputs), len(labels)}")
-        inputs = inputs.to(device)
+    with torch.no_grad():
+        for inputs in dataloader:
+            inputs = inputs.to(device, non_blocking=True)
+            outputs = model_ft(inputs)
 
-        # zero the parameter gradients
-        torch.set_grad_enabled(False)
-        outputs = model_ft(inputs)
-
-        if threshold > 0:
-            outputs = (outputs>threshold).float()
-        else:
-            outputs = outputs.float()
-        preds = outputs.cpu().detach().numpy()
-        flattened_preds = preds.flatten().tolist()
-        results += flattened_preds
+            if threshold > 0:
+                outputs = (outputs>threshold).float()
+            else:
+                outputs = outputs.float()
+            preds = outputs.cpu().detach().numpy()
+            flattened_preds = preds.flatten().tolist()
+            results += flattened_preds
 
     return results
+
+
+# Batch process multiple tracklets efficiently with a single model load
+def run_batch_tracklets(tracklet_dict, model_path, threshold=0.5, arch='resnet18', batch_size=512, num_workers=2):
+    """
+    Process multiple tracklets efficiently in batches.
+    
+    Args:
+        tracklet_dict: Dictionary mapping tracklet_id -> list of image paths
+        model_path: Path to model weights
+        threshold: Classification threshold
+        arch: Model architecture
+        batch_size: Batch size for processing (default: 512)
+        num_workers: Number of data loader workers
+    
+    Returns:
+        Dictionary mapping tracklet_id -> list of predictions
+    """
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+    if torch.cuda.is_available():
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
+        print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.2f} GB")
+    cudnn.benchmark = True
+    
+    # Load model once
+    state_dict = torch.load(model_path, map_location=device)
+    if arch == 'resnet18':
+        model_ft = LegibilityClassifier()
+    elif arch == 'vit':
+        model_ft = LegibilityClassifierTransformer()
+    else:
+        model_ft = LegibilityClassifier34()
+    
+    if hasattr(state_dict, '_metadata'):
+        del state_dict._metadata
+    model_ft.load_state_dict(state_dict)
+    model_ft = model_ft.to(device)
+    model_ft.eval()
+    
+    # Flatten all images with tracklet tracking
+    all_images = []
+    tracklet_indices = {}
+    current_idx = 0
+    
+    for tracklet_id, image_paths in tracklet_dict.items():
+        start_idx = current_idx
+        end_idx = current_idx + len(image_paths)
+        tracklet_indices[tracklet_id] = (start_idx, end_idx)
+        all_images.extend(image_paths)
+        current_idx = end_idx
+    
+    # Process all images in batches
+    dataset = UnlabelledJerseyNumberLegibilityDataset(all_images, arch=arch)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
+                                            shuffle=False, num_workers=num_workers,
+                                            pin_memory=True if torch.cuda.is_available() else False)
+    
+    print(f"Processing {len(all_images)} images in batches of {batch_size} ({len(dataloader)} batches total)")
+    
+    all_results = []
+    with torch.no_grad():
+        for batch_idx, inputs in enumerate(tqdm(dataloader, desc="Processing batches")):
+            inputs = inputs.to(device, non_blocking=True)
+            
+            # Verify GPU usage on first batch
+            if batch_idx == 0 and torch.cuda.is_available():
+                print(f"First batch on device: {inputs.device}, shape: {inputs.shape}")
+            
+            outputs = model_ft(inputs)
+            
+            if threshold > 0:
+                outputs = (outputs > threshold).float()
+            else:
+                outputs = outputs.float()
+            
+            preds = outputs.cpu().detach().numpy()
+            flattened_preds = preds.flatten().tolist()
+            all_results += flattened_preds
+    
+    # Split results back into tracklets
+    results_dict = {}
+    for tracklet_id, (start_idx, end_idx) in tracklet_indices.items():
+        results_dict[tracklet_id] = all_results[start_idx:end_idx]
+    
+    return results_dict
 
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")

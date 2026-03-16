@@ -513,6 +513,9 @@ def identify_soccer_balls(image_dir, soccer_ball_list):
     tracklets = os.listdir(image_dir)
     for track in tqdm(tracklets):
         track_path = os.path.join(image_dir, track)
+        # Skip non-directory files (e.g., .DS_Store)
+        if not os.path.isdir(track_path):
+            continue
         image_names = os.listdir(track_path)
         sample = len(image_names) if len(image_names) < 10 else 10
         imgs = np.random.choice(image_names, size=sample, replace=False)
@@ -780,7 +783,7 @@ def generate_crops_for_split(source, target, split):
     print("Extracting pose")
     command = f"conda run -n {pose_env} python3 pose.py {pose_home}/configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/ViTPose_huge_coco_256x192.py \
         {pose_home}/checkpoints/vitpose-h.pth --img-root / --json-file {input_json} \
-        --out-json {output_json}"
+        --out-json {output_json} --fp16 --num-workers 2"
     success = os.system(command) == 0
     if not success:
         print("Error extractivng pose")

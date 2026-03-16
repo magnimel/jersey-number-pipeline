@@ -79,20 +79,20 @@ dataset = {'SoccerNet':
                  'legibility_model': "models/legibility_resnet34_soccer_20240215.pth",
                  'legibility_model_arch': "resnet34",
 
-                 'legibility_model_url':  "https://drive.google.com/uc?id=18HAuZbge3z8TSfRiX_FzsnKgiBs-RRNw",
-                 'pose_model_url': 'https://drive.google.com/uc?id=1A3ftF118IcxMn_QONndR-8dPWpf7XzdV',
+                 'legibility_model_url':  "https://drive.google.com/uc?id=1QDAqZvIbf0UPP9disdBsqcdIB0e84ZWa",
+                 'pose_model_url': 'https://drive.google.com/uc?id=1gHOcfVvmwVDuJsn9c-a-v39vIqFpfbH0',
                  'str_model': 'models/parseq_epoch=24-step=2575-val_accuracy=95.6044-val_NED=96.3255.ckpt',
 
                  #'str_model': 'pretrained=parseq',
-                 'str_model_url': "https://drive.google.com/uc?id=1uRln22tlhneVt3P6MePmVxBWSLMsL3bm",
+                 'str_model_url': "https://drive.google.com/uc?id=1DULUhorGHsozOumtSocon0V-kbKwFCWG",
                 },
            "Hockey": {
                  'root_dir': 'data/Hockey',
                  'legibility_data': 'legibility_dataset',
                  'numbers_data': 'jersey_number_dataset/jersey_numbers_lmdb',
                  'legibility_model':  'models/legibility_resnet34_hockey_20240201.pth',
-                 'legibility_model_url':  "https://drive.google.com/uc?id=1RfxINtZ_wCNVF8iZsiMYuFOP7KMgqgDp",
+                 'legibility_model_url':  "https://drive.google.com/uc?id=1wVmogmky9s54cn3TrO5JIcaO3R1jWpI-",
                  'str_model': 'models/parseq_epoch=3-step=95-val_accuracy=98.7903-val_NED=99.3952.ckpt',
-                 'str_model_url': "https://drive.google.com/uc?id=1FyM31xvSXFRusN0sZH0EWXoHwDfB9WIE",
+                 'str_model_url': "https://drive.google.com/uc?id=1mhGUeKUIW0-ieuCrOvfNCPgPmu1nODM7",
             }
         }

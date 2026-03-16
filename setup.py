@@ -25,11 +25,13 @@ def get_conda_envs():
     stream = os.popen("conda env list")
     output = stream.read()
     a = output.split()
-    a.remove("*")
-    a.remove("#")
-    a.remove("#")
-    a.remove("conda")
-    a.remove("environments:")
+    # print("OUTPUT", output)
+    # print("a=", a)
+    # Remove markers if they exist
+    for item in ["*", "#", "conda", "environments:"]:
+        while item in a:
+            a.remove(item)
+    
     return a[::2]
 ###########################################
 
@@ -88,7 +90,7 @@ def setup_pose(root):
 
         os.chdir(os.path.join(root, rep_path, "ViTPose"))
         os.system(f"conda run --live-stream -n {env_name} pip install -v -e .")
-        os.system(f"conda run --live-stream -n {env_name} pip install timm==0.4.9 einops")
+        os.system(f"conda run --live-stream -n {env_name} pip install timm==0.4.9 einops tqdm")
 
 
 # clone and install str
@@ -121,7 +123,7 @@ def download_models_common(root_dir):
     url = cfg.dataset['SoccerNet']['pose_model_url']
     models_folder_path = os.path.join(rep_path, repo_name, "checkpoints")
     if not os.path.exists(models_folder_path):
-        os.system(f"mkdir {models_folder_path}")
+        os.makedirs(models_folder_path, exist_ok=True)
     save_path = os.path.join(rep_path, "ViTPose", "checkpoints", "vitpose-h.pth")
     if not os.path.isfile(save_path):
         gdown.download(url, save_path)
@@ -151,7 +153,7 @@ def setup_sam(root_dir):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('dataset', default='all', help="Options: all, SoccerNet, Hockey")
-
+    
     args = parser.parse_args()
 
     root_dir = os.getcwd()
