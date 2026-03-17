@@ -7,8 +7,76 @@ import helpers
 from tqdm import tqdm
 import configuration as config
 from pathlib import Path
+import esrgan
 
-def get_soccer_net_raw_legibility_results(args, use_filtered = True, filter = 'gauss', exclude_balls=True):
+def get_soccer_net_raw_legibility_results(args, use_filtered = True, filter = 'gauss', exclude_balls=True, batch_size=512, num_workers=2):
+    """
+    Optimized version that processes all tracklets in batches.
+    
+    Args:
+        batch_size: Batch size for processing (default 512, increase for better GPU utilization)
+        num_workers: Number of dataloader workers (default 2 for Windows compatibility)
+    """
+    root_dir = config.dataset['SoccerNet']['root_dir']
+    image_dir = config.dataset['SoccerNet'][args.part]['images']
+    path_to_images = os.path.join(root_dir, image_dir)
+    tracklets = os.listdir(path_to_images)
+
+    if use_filtered:
+        if filter == 'sim':
+            path_to_filter_results = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                                  config.dataset['SoccerNet'][args.part]['sim_filtered'])
+        else:
+            path_to_filter_results = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                                  config.dataset['SoccerNet'][args.part]['gauss_filtered'])
+        with open(path_to_filter_results, 'r') as f:
+            filtered = json.load(f)
+
+
+    if exclude_balls:
+        updated_tracklets = []
+        soccer_ball_list = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                        config.dataset['SoccerNet'][args.part]['soccer_ball_list'])
+        with open(soccer_ball_list, 'r') as f:
+            ball_json = json.load(f)
+        ball_list = ball_json['ball_tracks']
+        for track in tracklets:
+            if not track in ball_list:
+                updated_tracklets.append(track)
+        tracklets = updated_tracklets
+
+    # Build tracklet dictionary for batch processing
+    print("Preparing tracklet data...")
+    tracklet_dict = {}
+    for directory in tracklets:
+        track_dir = os.path.join(path_to_images, directory)
+        if use_filtered:
+            images = filtered[directory]
+        else:
+            images = os.listdir(track_dir)
+        images_full_path = [os.path.join(track_dir, x) for x in images]
+        tracklet_dict[directory] = images_full_path
+    
+    # Process all tracklets in batches (much faster!)
+    print(f"Classifying Legibility in batches (batch_size={batch_size}, num_workers={num_workers})...")
+    results_dict = lc.run_batch_tracklets(
+        tracklet_dict, 
+        config.dataset['SoccerNet']['legibility_model'], 
+        threshold=-1, 
+        arch=config.dataset['SoccerNet']['legibility_model_arch'],
+        batch_size=batch_size,
+        num_workers=num_workers
+    )
+
+    # save results
+    full_legibile_path = os.path.join(config.dataset['SoccerNet']['working_dir'], config.dataset['SoccerNet'][args.part]['raw_legible_result'])
+    with open(full_legibile_path, "w") as outfile:
+        json.dump(results_dict, outfile)
+
+    return results_dict
+
+def get_soccer_net_raw_legibility_results_old(args, use_filtered = True, filter = 'gauss', exclude_balls=True):
+    """OLD SLOW VERSION - kept for reference"""
     root_dir = config.dataset['SoccerNet']['root_dir']
     image_dir = config.dataset['SoccerNet'][args.part]['images']
     path_to_images = os.path.join(root_dir, image_dir)
@@ -56,7 +124,14 @@ def get_soccer_net_raw_legibility_results(args, use_filtered = True, filter = 'g
 
     return results_dict
 
-def get_soccer_net_legibility_results(args, use_filtered = False, filter = 'sim', exclude_balls=True):
+def get_soccer_net_legibility_results(args, use_filtered = False, filter = 'sim', exclude_balls=True, batch_size=512, num_workers=2):
+    """
+    Optimized version that processes all tracklets in batches.
+    
+    Args:
+        batch_size: Batch size for processing (default 512, increase for better GPU utilization)
+        num_workers: Number of dataloader workers (default 2 for Windows compatibility)
+    """
     root_dir = config.dataset['SoccerNet']['root_dir']
     image_dir = config.dataset['SoccerNet'][args.part]['images']
     path_to_images = os.path.join(root_dir, image_dir)
@@ -87,19 +162,36 @@ def get_soccer_net_legibility_results(args, use_filtered = False, filter = 'sim'
                 updated_tracklets.append(track)
         tracklets = updated_tracklets
 
-
-    for directory in tqdm(tracklets):
+    # Build tracklet dictionary for batch processing
+    print("Preparing tracklet data...")
+    tracklet_dict = {}
+    for directory in tracklets:
         track_dir = os.path.join(path_to_images, directory)
         if use_filtered:
             images = filtered[directory]
         else:
             images = os.listdir(track_dir)
         images_full_path = [os.path.join(track_dir, x) for x in images]
-        track_results = lc.run(images_full_path, config.dataset['SoccerNet']['legibility_model'], arch=config.dataset['SoccerNet']['legibility_model_arch'], threshold=0.5)
+        tracklet_dict[directory] = images_full_path
+    
+    # Process all tracklets in batches (much faster!)
+    print(f"Classifying Legibility in batches (batch_size={batch_size}, num_workers={num_workers})...")
+    results_dict = lc.run_batch_tracklets(
+        tracklet_dict, 
+        config.dataset['SoccerNet']['legibility_model'], 
+        threshold=0.5, 
+        arch=config.dataset['SoccerNet']['legibility_model_arch'],
+        batch_size=batch_size,
+        num_workers=num_workers
+    )
+    
+    # Filter to only legible images
+    for directory, track_results in results_dict.items():
         legible = list(np.nonzero(track_results))[0]
         if len(legible) == 0:
             illegible_tracklets.append(directory)
         else:
+            images_full_path = tracklet_dict[directory]
             legible_images = [images_full_path[i] for i in legible]
             legible_tracklets[directory] = legible_images
 
@@ -138,6 +230,108 @@ def generate_json_for_pose_estimator(args, legible = None):
     helpers.generate_json(all_files, output_json)
 
 
+def detect_pipeline_stage(args):
+    """Detect which stage the pipeline stopped at by checking for output files."""
+    stages = []
+    
+    if args.dataset == 'SoccerNet':
+        soccer_ball_list = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                          config.dataset['SoccerNet'][args.part]['soccer_ball_list'])
+        features_dir = config.dataset['SoccerNet'][args.part]['feature_output_folder']
+        full_legibile_path = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                          config.dataset['SoccerNet'][args.part]['legible_result'])
+        output_json = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                   config.dataset['SoccerNet'][args.part]['pose_output_json'])
+        crops_destination_dir = os.path.join(config.dataset['SoccerNet']['working_dir'], 
+                                            config.dataset['SoccerNet'][args.part]['crops_folder'], 'imgs')
+        esrgan_destination_dir = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                              config.dataset['SoccerNet'][args.part]['crops_sr_folder'], 'imgs')
+        str_result_file = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                       config.dataset['SoccerNet'][args.part]['jersey_id_result'])
+        final_results_path = os.path.join(config.dataset['SoccerNet']['working_dir'], 
+                                         config.dataset['SoccerNet'][args.part]['final_result'])
+        
+        # Check which stages have been completed
+        if os.path.exists(soccer_ball_list):
+            stages.append('soccer_ball_filter')
+        if os.path.exists(features_dir):
+            stages.append('feat')
+        if os.path.exists(features_dir):  # filter uses same directory, check for filter marker
+            stages.append('filter')
+        if os.path.exists(full_legibile_path):
+            stages.append('legible')
+        if os.path.exists(output_json):
+            stages.append('pose')
+        if os.path.exists(crops_destination_dir):
+            stages.append('crops')
+        if os.path.exists(esrgan_destination_dir):
+            stages.append('esrgan')
+        if os.path.exists(str_result_file):
+            stages.append('str')
+        if os.path.exists(final_results_path):
+            stages.append('combine')
+            
+    elif args.dataset == 'Hockey':
+        legibility_output = os.path.join(config.dataset['Hockey']['root_dir'], 
+                                        config.dataset['Hockey']['legibility_data'], 'results.json')
+        str_output = os.path.join(config.dataset['Hockey']['root_dir'],
+                                 config.dataset['Hockey']['numbers_data'], 'predictions.json')
+        
+        if os.path.exists(legibility_output):
+            stages.append('legible')
+        if os.path.exists(str_output):
+            stages.append('str')
+    
+    return stages
+
+
+def resume_pipeline_from_stage(dataset, stages):
+    """Create pipeline dictionary resuming from the last completed stage."""
+    if dataset == 'SoccerNet':
+        actions = {"soccer_ball_filter": True,
+                   "feat": True,
+                   "filter": True,
+                   "legible": True,
+                   "legible_eval": False,
+                   "pose": True,
+                   "crops": True,
+                   "esrgan": True,
+                   "str": True,
+                   "combine": True,
+                   "eval": True}
+        
+        # Disable stages that have already been completed
+        if 'soccer_ball_filter' in stages:
+            actions['soccer_ball_filter'] = False
+        if 'feat' in stages:
+            actions['feat'] = False
+        if 'filter' in stages:
+            actions['filter'] = False
+        if 'legible' in stages:
+            actions['legible'] = False
+        if 'pose' in stages:
+            actions['pose'] = False
+        if 'crops' in stages:
+            actions['crops'] = False
+        if 'esrgan' in stages:
+            actions['esrgan'] = False
+        if 'str' in stages:
+            actions['str'] = False
+        if 'combine' in stages:
+            actions['combine'] = False
+            
+    elif dataset == 'Hockey':
+        actions = {"legible": True,
+                   "str": True}
+        
+        if 'legible' in stages:
+            actions['legible'] = False
+        if 'str' in stages:
+            actions['str'] = False
+    
+    return actions
+
+
 def consolidated_results(image_dir, dict, illegible_path, soccer_ball_list=None):
     if not soccer_ball_list is None:
         with open(soccer_ball_list, 'r') as sf:
@@ -168,7 +362,7 @@ def train_parseq(args):
         current_dir = os.getcwd()
         os.chdir(parseq_dir)
         data_root = os.path.join(current_dir, config.dataset['Hockey']['root_dir'], config.dataset['Hockey']['numbers_data'])
-        command = f"conda run -n {config.str_env} python3 train.py +experiment=parseq dataset=real data.root_dir={data_root} trainer.max_epochs=25 " \
+        command = f"conda run -n {config.str_env} --no-capture-output python3 train.py +experiment=parseq dataset=real data.root_dir={data_root} trainer.max_epochs=25 " \
                   f"pretrained=parseq trainer.devices=1 trainer.val_check_interval=1 data.batch_size=128 data.max_label_length=2"
         success = os.system(command) == 0
         os.chdir(current_dir)
@@ -179,7 +373,7 @@ def train_parseq(args):
         current_dir = os.getcwd()
         os.chdir(parseq_dir)
         data_root = os.path.join(current_dir, config.dataset['SoccerNet']['root_dir'], config.dataset['SoccerNet']['numbers_data'])
-        command = f"conda run -n {config.str_env} python3 train.py +experiment=parseq dataset=real data.root_dir={data_root} trainer.max_epochs=25 " \
+        command = f"conda run -n {config.str_env} --no-capture-output python3 train.py +experiment=parseq dataset=real data.root_dir={data_root} trainer.max_epochs=25 " \
                   f"pretrained=parseq trainer.devices=1 trainer.val_check_interval=1 data.batch_size=128 data.max_label_length=2"
         success = os.system(command) == 0
         os.chdir(current_dir)
@@ -205,7 +399,7 @@ def hockey_pipeline(args):
         print("Predict numbers")
         current_dir = os.getcwd()
         data_root = os.path.join(current_dir, config.dataset['Hockey']['root_dir'], config.dataset['Hockey']['numbers_data'])
-        command = f"conda run -n {config.str_env} python3 str.py  {config.dataset['Hockey']['str_model']}\
+        command = f"conda run -n {config.str_env} --no-capture-output python3 str.py  {config.dataset['Hockey']['str_model']}\
             --data_root={data_root}"
         success = os.system(command) == 0
         print("Done predict numbers")
@@ -241,14 +435,14 @@ def soccer_net_pipeline(args):
     # 1. generate and store features for each image in each tracklet
     if args.pipeline['feat']:
         print("Generate features")
-        command = f"conda run -n {config.reid_env} python3 {config.reid_script} --tracklets_folder {image_dir} --output_folder {features_dir}"
+        command = f"conda run -n {config.reid_env} --no-capture-output python3 {config.reid_script} --tracklets_folder {image_dir} --output_folder {features_dir} --batch_size 512 --num_workers 2"
         success = os.system(command) == 0
         print("Done generating features")
 
     #2. identify and remove outliers based on features
     if args.pipeline['filter'] and success:
         print("Identify and remove outliers")
-        command = f"python3 gaussian_outliers.py --tracklets_folder {image_dir} --output_folder {features_dir}"
+        command = f"python gaussian_outliers.py --tracklets_folder {image_dir} --output_folder {features_dir}"
         success = os.system(command) == 0
         print("Done removing outliers")
 
@@ -256,7 +450,7 @@ def soccer_net_pipeline(args):
     if args.pipeline['legible'] and success:
         print("Classifying Legibility:")
         try:
-            legible_dict, illegible_tracklets = get_soccer_net_legibility_results(args, use_filtered=True, filter='gauss', exclude_balls=True)
+            legible_dict, illegible_tracklets = get_soccer_net_legibility_results(args, use_filtered=True, filter='gauss', exclude_balls=True, batch_size=512)
             #get_soccer_net_raw_legibility_results(args)
             #legible_dict, illegible_tracklets = get_soccer_net_combined_legibility_results(args)
         except Exception as error:
@@ -301,9 +495,9 @@ def soccer_net_pipeline(args):
         #5. run pose estimation and store results
         if success:
             print("Detecting pose")
-            command = f"conda run -n {config.pose_env} python3 pose.py {config.pose_home}/configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/ViTPose_huge_coco_256x192.py \
+            command = f"conda run -n {config.pose_env} --no-capture-output python3 pose.py {config.pose_home}/configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/ViTPose_huge_coco_256x192.py \
                 {config.pose_home}/checkpoints/vitpose-h.pth --img-root / --json-file {input_json} \
-                --out-json {output_json}"
+                --out-json {output_json} --num-workers 2"
             success = os.system(command) == 0
             print("Done detecting pose")
 
@@ -325,12 +519,45 @@ def soccer_net_pipeline(args):
 
     str_result_file = os.path.join(config.dataset['SoccerNet']['working_dir'],
                                    config.dataset['SoccerNet'][args.part]['jersey_id_result'])
+    #6.5 upscale crops with Real-ESRGAN before passing to STR
+    if args.pipeline.get('esrgan', False) and success:
+        print("Upscaling crops with Real-ESRGAN x4")
+        try:
+            crops_input_dir = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                           config.dataset['SoccerNet'][args.part]['crops_folder'], 'imgs')
+            crops_sr_dir = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                        config.dataset['SoccerNet'][args.part]['crops_sr_folder'], 'imgs')
+            Path(crops_sr_dir).mkdir(parents=True, exist_ok=True)
+            esrgan.upscale_directory(
+                input_dir=crops_input_dir,
+                output_dir=crops_sr_dir,
+                model_path=config.dataset['SoccerNet']['esrgan_model'],
+                scale=config.esrgan_scale,
+                tile=config.esrgan_tile,
+                half=config.esrgan_half,
+            )
+        except Exception as e:
+            print(f'Real-ESRGAN upscaling failed: {e}')
+            print('Falling back to original crops for STR.')
+            success = True  # non-fatal: STR will use original crops
+        print("Done upscaling crops")
+
     #7. run STR system on all crops
     if args.pipeline['str'] and success:
         print("Predict numbers")
-        image_dir = os.path.join(config.dataset['SoccerNet']['working_dir'], config.dataset['SoccerNet'][args.part]['crops_folder'])
+        # Use super-resolved crops if the esrgan step was enabled and its output exists
+        _crops_sr_dir = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                     config.dataset['SoccerNet'][args.part]['crops_sr_folder'])
+        _crops_sr_imgs = os.path.join(_crops_sr_dir, 'imgs')
+        if args.pipeline.get('esrgan', False) and os.path.isdir(_crops_sr_imgs) and os.listdir(_crops_sr_imgs):
+            image_dir = _crops_sr_dir
+            print(f"[STR] Using super-resolved crops from {image_dir}")
+        else:
+            image_dir = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                     config.dataset['SoccerNet'][args.part]['crops_folder'])
+            print(f"[STR] Using original crops from {image_dir}")
 
-        command = f"conda run -n {config.str_env} python3 str.py  {config.dataset['SoccerNet']['str_model']}\
+        command = f"conda run -n {config.str_env} --no-capture-output python3 str.py  {config.dataset['SoccerNet']['str_model']}\
             --data_root={image_dir} --batch_size=1 --inference --result_file {str_result_file}"
         success = os.system(command) == 0
         print("Done predict numbers")
@@ -368,30 +595,40 @@ if __name__ == '__main__':
     parser.add_argument('dataset', help="Options: 'SoccerNet', 'Hockey'")
     parser.add_argument('part', help="Options: 'test', 'val', 'train', 'challenge")
     parser.add_argument('--train_str', action='store_true', default=False, help="Run training of jersey number recognition")
+    parser.add_argument('--resume', action='store_true', default=False, help="Resume pipeline from last completed stage")
     args = parser.parse_args()
 
     if not args.train_str:
         if args.dataset == 'SoccerNet':
-            actions = {"soccer_ball_filter": True,
-                       "feat": True,
-                       "filter": True,
-                       "legible": True,
-                       "legible_eval": False,
-                       "pose": True,
-                       "crops": True,
-                       "str": True,
-                       "combine": True,
-                       "eval": True}
+            if args.resume:
+                completed_stages = detect_pipeline_stage(args)
+                print(f"Detected completed stages: {completed_stages}")
+                actions = resume_pipeline_from_stage(args.dataset, completed_stages)
+            else:
+                actions = {"soccer_ball_filter": True,
+                           "feat": True,
+                           "filter": True,
+                           "legible": True,
+                           "legible_eval": False,
+                           "pose": True,
+                           "crops": True,
+                           "esrgan": True,
+                           "str": True,
+                           "combine": True,
+                           "eval": True}
             args.pipeline = actions
             soccer_net_pipeline(args)
         elif args.dataset == 'Hockey':
-            actions = {"legible": True,
-                       "str": True}
+            if args.resume:
+                completed_stages = detect_pipeline_stage(args)
+                print(f"Detected completed stages: {completed_stages}")
+                actions = resume_pipeline_from_stage(args.dataset, completed_stages)
+            else:
+                actions = {"legible": True,
+                           "str": True}
             args.pipeline = actions
             hockey_pipeline(args)
         else:
             print("Unknown dataset")
     else:
         train_parseq(args)
-
-

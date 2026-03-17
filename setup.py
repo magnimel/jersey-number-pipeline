@@ -25,11 +25,13 @@ def get_conda_envs():
     stream = os.popen("conda env list")
     output = stream.read()
     a = output.split()
-    a.remove("*")
-    a.remove("#")
-    a.remove("#")
-    a.remove("conda")
-    a.remove("environments:")
+    # print("OUTPUT", output)
+    # print("a=", a)
+    # Remove markers if they exist
+    for item in ["*", "#", "conda", "environments:"]:
+        while item in a:
+            a.remove(item)
+    
     return a[::2]
 ###########################################
 
@@ -88,7 +90,7 @@ def setup_pose(root):
 
         os.chdir(os.path.join(root, rep_path, "ViTPose"))
         os.system(f"conda run --live-stream -n {env_name} pip install -v -e .")
-        os.system(f"conda run --live-stream -n {env_name} pip install timm==0.4.9 einops")
+        os.system(f"conda run --live-stream -n {env_name} pip install timm==0.4.9 einops tqdm")
 
 
 # clone and install str
@@ -121,7 +123,7 @@ def download_models_common(root_dir):
     url = cfg.dataset['SoccerNet']['pose_model_url']
     models_folder_path = os.path.join(rep_path, repo_name, "checkpoints")
     if not os.path.exists(models_folder_path):
-        os.system(f"mkdir {models_folder_path}")
+        os.makedirs(models_folder_path, exist_ok=True)
     save_path = os.path.join(rep_path, "ViTPose", "checkpoints", "vitpose-h.pth")
     if not os.path.isfile(save_path):
         gdown.download(url, save_path)
@@ -148,16 +150,40 @@ def setup_sam(root_dir):
         os.system(f"git clone --recurse-submodules {src_url} {os.path.join(root_dir, repo_name)}")
 
 
+def setup_esrgan(root_dir):
+    """Install Real-ESRGAN and download the x4plus model weights."""
+    models_dir = os.path.join(root_dir, 'models')
+    os.makedirs(models_dir, exist_ok=True)
+
+    weight_path = os.path.join(models_dir, 'RealESRGAN_x4plus.pth')
+    if not os.path.isfile(weight_path):
+        print("Downloading RealESRGAN_x4plus weights...")
+        url = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth"
+        urllib.request.urlretrieve(url, weight_path)
+        print(f"Saved to {weight_path}")
+    else:
+        print(f"RealESRGAN weights already present at {weight_path}")
+
+    # Install the realesrgan Python package if not already available
+    try:
+        import realesrgan  # noqa: F401
+        print("realesrgan package already installed.")
+    except ImportError:
+        print("Installing realesrgan and basicsr packages...")
+        os.system("pip install realesrgan basicsr")
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('dataset', default='all', help="Options: all, SoccerNet, Hockey")
-
+    
     args = parser.parse_args()
 
     root_dir = os.getcwd()
 
     # common for both datasets
     setup_sam(root_dir)
+    setup_esrgan(root_dir)
     setup_pose(root_dir)
     download_models_common(root_dir)
     setup_str(root_dir)
