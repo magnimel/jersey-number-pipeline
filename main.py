@@ -7,7 +7,6 @@ import helpers
 from tqdm import tqdm
 import configuration as config
 from pathlib import Path
-import esrgan
 
 def get_soccer_net_raw_legibility_results(args, use_filtered = True, filter = 'gauss', exclude_balls=True, batch_size=512, num_workers=2):
     """
@@ -244,8 +243,6 @@ def detect_pipeline_stage(args):
                                    config.dataset['SoccerNet'][args.part]['pose_output_json'])
         crops_destination_dir = os.path.join(config.dataset['SoccerNet']['working_dir'], 
                                             config.dataset['SoccerNet'][args.part]['crops_folder'], 'imgs')
-        esrgan_destination_dir = os.path.join(config.dataset['SoccerNet']['working_dir'],
-                                              config.dataset['SoccerNet'][args.part]['crops_sr_folder'], 'imgs')
         str_result_file = os.path.join(config.dataset['SoccerNet']['working_dir'],
                                        config.dataset['SoccerNet'][args.part]['jersey_id_result'])
         final_results_path = os.path.join(config.dataset['SoccerNet']['working_dir'], 
@@ -264,8 +261,6 @@ def detect_pipeline_stage(args):
             stages.append('pose')
         if os.path.exists(crops_destination_dir):
             stages.append('crops')
-        if os.path.exists(esrgan_destination_dir):
-            stages.append('esrgan')
         if os.path.exists(str_result_file):
             stages.append('str')
         if os.path.exists(final_results_path):
@@ -295,7 +290,6 @@ def resume_pipeline_from_stage(dataset, stages):
                    "legible_eval": False,
                    "pose": True,
                    "crops": True,
-                   "esrgan": True,
                    "str": True,
                    "combine": True,
                    "eval": True}
@@ -313,8 +307,6 @@ def resume_pipeline_from_stage(dataset, stages):
             actions['pose'] = False
         if 'crops' in stages:
             actions['crops'] = False
-        if 'esrgan' in stages:
-            actions['esrgan'] = False
         if 'str' in stages:
             actions['str'] = False
         if 'combine' in stages:
@@ -519,43 +511,10 @@ def soccer_net_pipeline(args):
 
     str_result_file = os.path.join(config.dataset['SoccerNet']['working_dir'],
                                    config.dataset['SoccerNet'][args.part]['jersey_id_result'])
-    #6.5 upscale crops with Real-ESRGAN before passing to STR
-    if args.pipeline.get('esrgan', False) and success:
-        print("Upscaling crops with Real-ESRGAN x4")
-        try:
-            crops_input_dir = os.path.join(config.dataset['SoccerNet']['working_dir'],
-                                           config.dataset['SoccerNet'][args.part]['crops_folder'], 'imgs')
-            crops_sr_dir = os.path.join(config.dataset['SoccerNet']['working_dir'],
-                                        config.dataset['SoccerNet'][args.part]['crops_sr_folder'], 'imgs')
-            Path(crops_sr_dir).mkdir(parents=True, exist_ok=True)
-            esrgan.upscale_directory(
-                input_dir=crops_input_dir,
-                output_dir=crops_sr_dir,
-                model_path=config.dataset['SoccerNet']['esrgan_model'],
-                scale=config.esrgan_scale,
-                tile=config.esrgan_tile,
-                half=config.esrgan_half,
-            )
-        except Exception as e:
-            print(f'Real-ESRGAN upscaling failed: {e}')
-            print('Falling back to original crops for STR.')
-            success = True  # non-fatal: STR will use original crops
-        print("Done upscaling crops")
-
     #7. run STR system on all crops
     if args.pipeline['str'] and success:
         print("Predict numbers")
-        # Use super-resolved crops if the esrgan step was enabled and its output exists
-        _crops_sr_dir = os.path.join(config.dataset['SoccerNet']['working_dir'],
-                                     config.dataset['SoccerNet'][args.part]['crops_sr_folder'])
-        _crops_sr_imgs = os.path.join(_crops_sr_dir, 'imgs')
-        if args.pipeline.get('esrgan', False) and os.path.isdir(_crops_sr_imgs) and os.listdir(_crops_sr_imgs):
-            image_dir = _crops_sr_dir
-            print(f"[STR] Using super-resolved crops from {image_dir}")
-        else:
-            image_dir = os.path.join(config.dataset['SoccerNet']['working_dir'],
-                                     config.dataset['SoccerNet'][args.part]['crops_folder'])
-            print(f"[STR] Using original crops from {image_dir}")
+        image_dir = os.path.join(config.dataset['SoccerNet']['working_dir'], config.dataset['SoccerNet'][args.part]['crops_folder'])
 
         command = f"conda run -n {config.str_env} --no-capture-output python3 str.py  {config.dataset['SoccerNet']['str_model']}\
             --data_root={image_dir} --batch_size=1 --inference --result_file {str_result_file}"
@@ -612,7 +571,6 @@ if __name__ == '__main__':
                            "legible_eval": False,
                            "pose": True,
                            "crops": True,
-                           "esrgan": True,
                            "str": True,
                            "combine": True,
                            "eval": True}
@@ -632,3 +590,5 @@ if __name__ == '__main__':
             print("Unknown dataset")
     else:
         train_parseq(args)
+
+
