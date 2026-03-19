@@ -596,7 +596,19 @@ if __name__ == '__main__':
     parser.add_argument('part', help="Options: 'test', 'val', 'train', 'challenge")
     parser.add_argument('--train_str', action='store_true', default=False, help="Run training of jersey number recognition")
     parser.add_argument('--resume', action='store_true', default=False, help="Resume pipeline from last completed stage")
+    parser.add_argument('--esrgan', action='store_true', default=False,
+                        help="Enable Real-ESRGAN x4 upscaling of crops before STR")
+    parser.add_argument('--subset', default=None,
+                        help="Path to a JSON file listing image paths to process (for testing on a subset)")
     args = parser.parse_args()
+
+    # Load subset image list if provided
+    if args.subset is not None:
+        with open(args.subset, 'r') as _fh:
+            args.subset_images = set(json.load(_fh))
+        print(f"[subset] Restricting pipeline to {len(args.subset_images)} images from {args.subset}")
+    else:
+        args.subset_images = None
 
     if not args.train_str:
         if args.dataset == 'SoccerNet':
@@ -612,10 +624,13 @@ if __name__ == '__main__':
                            "legible_eval": False,
                            "pose": True,
                            "crops": True,
-                           "esrgan": True,
+                           "esrgan": args.esrgan,
                            "str": True,
                            "combine": True,
                            "eval": True}
+            # When resuming, only run esrgan if the flag was passed and the stage hasn't completed
+            if args.resume:
+                actions['esrgan'] = actions.get('esrgan', False) and args.esrgan
             args.pipeline = actions
             soccer_net_pipeline(args)
         elif args.dataset == 'Hockey':
