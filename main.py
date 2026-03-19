@@ -48,6 +48,7 @@ def get_soccer_net_raw_legibility_results(args, use_filtered = True, filter = 'g
     # Build tracklet dictionary for batch processing
     print("Preparing tracklet data...")
     tracklet_dict = {}
+    subset_images = getattr(args, 'subset_images', None)
     for directory in tracklets:
         track_dir = os.path.join(path_to_images, directory)
         if use_filtered:
@@ -55,7 +56,11 @@ def get_soccer_net_raw_legibility_results(args, use_filtered = True, filter = 'g
         else:
             images = os.listdir(track_dir)
         images_full_path = [os.path.join(track_dir, x) for x in images]
-        tracklet_dict[directory] = images_full_path
+        # Apply subset filter if provided
+        if subset_images is not None:
+            images_full_path = [p for p in images_full_path if p in subset_images]
+        if images_full_path:
+            tracklet_dict[directory] = images_full_path
     
     # Process all tracklets in batches (much faster!)
     print(f"Classifying Legibility in batches (batch_size={batch_size}, num_workers={num_workers})...")
@@ -165,6 +170,7 @@ def get_soccer_net_legibility_results(args, use_filtered = False, filter = 'sim'
     # Build tracklet dictionary for batch processing
     print("Preparing tracklet data...")
     tracklet_dict = {}
+    subset_images = getattr(args, 'subset_images', None)
     for directory in tracklets:
         track_dir = os.path.join(path_to_images, directory)
         if use_filtered:
@@ -172,7 +178,11 @@ def get_soccer_net_legibility_results(args, use_filtered = False, filter = 'sim'
         else:
             images = os.listdir(track_dir)
         images_full_path = [os.path.join(track_dir, x) for x in images]
-        tracklet_dict[directory] = images_full_path
+        # Apply subset filter if provided
+        if subset_images is not None:
+            images_full_path = [p for p in images_full_path if p in subset_images]
+        if images_full_path:
+            tracklet_dict[directory] = images_full_path
     
     # Process all tracklets in batches (much faster!)
     print(f"Classifying Legibility in batches (batch_size={batch_size}, num_workers={num_workers})...")
@@ -211,10 +221,12 @@ def get_soccer_net_legibility_results(args, use_filtered = False, filter = 'sim'
 
 def generate_json_for_pose_estimator(args, legible = None):
     all_files = []
+    subset_images = getattr(args, 'subset_images', None)
     if not legible is None:
         for key in legible.keys():
             for entry in legible[key]:
-                all_files.append(os.path.join(os.getcwd(), entry))
+                if subset_images is None or entry in subset_images:
+                    all_files.append(os.path.join(os.getcwd(), entry))
     else:
         root_dir = os.path.join(os.getcwd(), config.dataset['SoccerNet']['root_dir'])
         image_dir = config.dataset['SoccerNet'][args.part]['images']
@@ -224,7 +236,9 @@ def generate_json_for_pose_estimator(args, legible = None):
             track_dir = os.path.join(path_to_images, tr)
             imgs = os.listdir(track_dir)
             for img in imgs:
-                all_files.append(os.path.join(track_dir, img))
+                full_path = os.path.join(track_dir, img)
+                if subset_images is None or full_path in subset_images:
+                    all_files.append(full_path)
 
     output_json = os.path.join(config.dataset['SoccerNet']['working_dir'], config.dataset['SoccerNet'][args.part]['pose_input_json'])
     helpers.generate_json(all_files, output_json)
@@ -256,7 +270,8 @@ def detect_pipeline_stage(args):
             stages.append('soccer_ball_filter')
         if os.path.exists(features_dir):
             stages.append('feat')
-        if os.path.exists(features_dir):  # filter uses same directory, check for filter marker
+        gauss_filter_file = os.path.join(features_dir, 'main_subject_gauss_th=3.5_r=3.json')
+        if os.path.exists(gauss_filter_file):
             stages.append('filter')
         if os.path.exists(full_legibile_path):
             stages.append('legible')
