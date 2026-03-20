@@ -157,6 +157,62 @@ class TrackletLegibilityDataset(Dataset):
         return image, track, label
 
 
+class DigitCountDataset(Dataset):
+    """Dataset for digit count classification (1-digit vs 2-digit jersey numbers).
+
+    Reads ground truth JSON (tracklet_id -> jersey_number) and walks tracklet
+    image folders. Label: 0 = 1-digit (0-9), 1 = 2-digit (10-99).
+    """
+    def __init__(self, gt_file, img_dir, mode='train', isBalanced=False, arch='resnet34'):
+        if 'resnet' in arch:
+            arch = 'resnet'
+        self.transform = data_transforms[mode][arch]
+        with open(gt_file, 'r') as f:
+            gt = json.load(f)
+
+        self.image_paths = []
+        self.labels = []
+        self.img_names = []
+
+        for tracklet_id, jersey_number in gt.items():
+            jersey_number = int(jersey_number)
+            if jersey_number < 0:
+                continue
+            digit_label = 0 if jersey_number < 10 else 1
+            tracklet_dir = os.path.join(img_dir, tracklet_id)
+            if not os.path.isdir(tracklet_dir):
+                continue
+            for img_name in os.listdir(tracklet_dir):
+                self.image_paths.append(os.path.join(tracklet_dir, img_name))
+                self.labels.append(digit_label)
+                self.img_names.append(f"{tracklet_id}/{img_name}")
+
+        one_digit = sum(1 for l in self.labels if l == 0)
+        two_digit = sum(1 for l in self.labels if l == 1)
+        print(f"DigitCount dataset: 1-digit={one_digit}, 2-digit={two_digit}, total={len(self.labels)}")
+
+        if isBalanced:
+            indices_0 = [i for i, l in enumerate(self.labels) if l == 0]
+            indices_1 = [i for i, l in enumerate(self.labels) if l == 1]
+            min_count = min(len(indices_0), len(indices_1))
+            np.random.shuffle(indices_0)
+            np.random.shuffle(indices_1)
+            keep = indices_0[:min_count] + indices_1[:min_count]
+            self.image_paths = [self.image_paths[i] for i in keep]
+            self.labels = [self.labels[i] for i in keep]
+            self.img_names = [self.img_names[i] for i in keep]
+            print(f"Balanced to {min_count} per class, total={len(self.labels)}")
+
+    def __len__(self):
+        return len(self.labels)
+
+    def __getitem__(self, idx):
+        image = Image.open(self.image_paths[idx]).convert('RGB')
+        if self.transform:
+            image = self.transform(image)
+        return image, self.labels[idx], self.img_names[idx]
+
+
 class JerseyNumberLegibilityDataset(Dataset):
     def __init__(self, annotations_file, img_dir, mode='train', isBalanced=False, arch='resnet18'):
         if 'resnet' in arch:

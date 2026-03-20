@@ -1,6 +1,7 @@
 import argparse
 import os
 import legibility_classifier as lc
+import digit_count_classifier as dc
 import numpy as np
 import json
 import helpers
@@ -261,6 +262,10 @@ def detect_pipeline_stage(args):
             stages.append('pose')
         if os.path.exists(crops_destination_dir):
             stages.append('crops')
+        digit_count_result_file = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                                config.dataset['SoccerNet'][args.part]['digit_count_result'])
+        if os.path.exists(digit_count_result_file):
+            stages.append('digit_count')
         if os.path.exists(str_result_file):
             stages.append('str')
         if os.path.exists(final_results_path):
@@ -290,10 +295,11 @@ def resume_pipeline_from_stage(dataset, stages):
                    "legible_eval": False,
                    "pose": True,
                    "crops": True,
+                   "digit_count": True,
                    "str": True,
                    "combine": True,
                    "eval": True}
-        
+
         # Disable stages that have already been completed
         if 'soccer_ball_filter' in stages:
             actions['soccer_ball_filter'] = False
@@ -307,6 +313,8 @@ def resume_pipeline_from_stage(dataset, stages):
             actions['pose'] = False
         if 'crops' in stages:
             actions['crops'] = False
+        if 'digit_count' in stages:
+            actions['digit_count'] = False
         if 'str' in stages:
             actions['str'] = False
         if 'combine' in stages:
@@ -509,6 +517,45 @@ def soccer_net_pipeline(args):
             success = False
         print("Done generating crops")
 
+    #6.75 digit count classification on crops
+    digit_count_result_path = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                           config.dataset['SoccerNet'][args.part]['digit_count_result'])
+    if args.pipeline.get('digit_count', False) and success:
+        print("Classifying digit count (1-digit vs 2-digit):")
+        try:
+            crops_dir = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                     config.dataset['SoccerNet'][args.part]['crops_folder'], 'imgs')
+            # Build tracklet dict from crop images
+            tracklet_dict = {}
+            for crop_file in os.listdir(crops_dir):
+                if not crop_file.endswith(('.jpg', '.png', '.jpeg')):
+                    continue
+                # crop filenames are like: tracklet_frame.jpg
+                tracklet_id = crop_file.rsplit('_', 1)[0]
+                if tracklet_id not in tracklet_dict:
+                    tracklet_dict[tracklet_id] = []
+                tracklet_dict[tracklet_id].append(os.path.join(crops_dir, crop_file))
+
+            results_dict = dc.run_batch_tracklets(
+                tracklet_dict,
+                config.dataset['SoccerNet']['digit_count_model'],
+                threshold=0.5,
+                batch_size=512
+            )
+
+            # Majority vote per tracklet: 1 or 2 digits
+            digit_count_dict = {}
+            for tracklet_id, preds in results_dict.items():
+                digit_count_dict[tracklet_id] = dc.get_majority_digit_count(preds)
+
+            with open(digit_count_result_path, 'w') as f:
+                json.dump(digit_count_dict, f)
+            print(f"Digit count results saved to {digit_count_result_path}")
+        except Exception as e:
+            print(f'Failed to run digit count classifier: {e}')
+            success = False
+        print("Done classifying digit count")
+
     str_result_file = os.path.join(config.dataset['SoccerNet']['working_dir'],
                                    config.dataset['SoccerNet'][args.part]['jersey_id_result'])
     #7. run STR system on all crops
@@ -571,6 +618,7 @@ if __name__ == '__main__':
                            "legible_eval": False,
                            "pose": True,
                            "crops": True,
+                           "digit_count": True,
                            "str": True,
                            "combine": True,
                            "eval": True}

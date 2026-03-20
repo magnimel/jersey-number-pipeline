@@ -115,6 +115,27 @@ class LegibilityClassifierTransformer(nn.Module):
         x = F.sigmoid(x)
         return x
 
+# MoViNet-style digit count classifier (1-digit vs 2-digit)
+# Uses ResNet34 backbone adapted for binary classification
+class DigitCountClassifier(nn.Module):
+    def __init__(self, finetune=False):
+        super().__init__()
+        self.model_ft = models.resnet34(pretrained=True)
+        if finetune:
+            for param in self.model_ft.parameters():
+                param.requires_grad = False
+        num_ftrs = self.model_ft.fc.in_features
+        self.model_ft.fc = nn.Linear(num_ftrs, 1)
+        self.model_ft.fc.requires_grad = True
+        self.model_ft.layer4.requires_grad = True
+        self.model_ft.avgpool.requires_grad = True
+
+    def forward(self, x):
+        x = self.model_ft(x)
+        x = F.sigmoid(x)
+        return x
+
+
 # Classifier Model
 class LegibilitySimpleClassifier(nn.Module):
     def __init__(self):
