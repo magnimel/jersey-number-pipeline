@@ -15,7 +15,7 @@ import os
 import numpy as np
 from tqdm import tqdm
 
-from sam.sam import SAM
+# SAM is optional - only imported when --sam flag is used
 
 
 def train_model(model, dataloaders, dataset_sizes, criterion, optimizer, scheduler, device, num_epochs=25):
@@ -348,6 +348,7 @@ if __name__ == '__main__':
         criterion = nn.BCELoss()
 
         if args.sam:
+            from sam.sam import SAM
             base_optimizer = torch.optim.SGD
             optimizer_ft = SAM(model_ft.parameters(), base_optimizer, lr=0.001, momentum=0.9)
             model_ft = train_model_with_sam(model_ft, dataloaders, dataset_sizes, criterion, optimizer_ft, device, num_epochs=10)
