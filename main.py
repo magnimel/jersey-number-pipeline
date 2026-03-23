@@ -550,6 +550,7 @@ def soccer_net_pipeline(args):
                 scale=config.esrgan_scale,
                 tile=config.esrgan_tile,
                 half=config.esrgan_half,
+                intermediate_dir=getattr(args, 'esrgan_intermediate_dir', None),
             )
         except Exception as e:
             print(f'Real-ESRGAN upscaling failed: {e}')
@@ -613,9 +614,17 @@ if __name__ == '__main__':
     parser.add_argument('--resume', action='store_true', default=False, help="Resume pipeline from last completed stage")
     parser.add_argument('--esrgan', action='store_true', default=False,
                         help="Enable Real-ESRGAN x4 upscaling of crops before STR")
+    parser.add_argument('--esrgan_intermediate_dir', default=None,
+                        help="If set, save the raw numpy array from each enhance() call "
+                             "here as <stem>.npy (before imwrite). Implies --esrgan. "
+                             "Useful for debugging or lossless downstream processing.")
     parser.add_argument('--subset', default=None,
                         help="Path to a JSON file listing image paths to process (for testing on a subset)")
     args = parser.parse_args()
+
+    # --esrgan_intermediate_dir implies --esrgan
+    if args.esrgan_intermediate_dir is not None:
+        args.esrgan = True
 
     # Load subset image list if provided
     if args.subset is not None:
