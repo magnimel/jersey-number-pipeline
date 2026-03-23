@@ -142,30 +142,40 @@ def upscale_directory(
     batch_size: int = 1,
     ext: str = "auto",
     overwrite: bool = False,
+    intermediate_dir: str | None = None,
 ) -> int:
     """
     Upscale every image in *input_dir* and save results to *output_dir*.
 
     Parameters
     ----------
-    input_dir   : directory containing the pose-guided crops (imgs/ folder)
-    output_dir  : destination for super-resolved images (same filenames)
-    model_path  : path to the Real-ESRGAN .pth checkpoint
-    scale       : upscaling factor (4 for RealESRGAN_x4plus)
-    tile        : tile size for patch-based inference (0 = whole image)
-    tile_pad    : padding between tiles
-    pre_pad     : padding added before processing
-    half        : use FP16 inference (faster on modern GPUs)
-    batch_size  : images processed per GPU batch (kept for API compat;
-                  RealESRGANer processes one image at a time internally)
-    ext         : output extension – "auto" keeps the original extension
-    overwrite   : skip images that already exist in output_dir
+    input_dir        : directory containing the pose-guided crops (imgs/ folder)
+    output_dir       : destination for super-resolved images (same filenames)
+    model_path       : path to the Real-ESRGAN .pth checkpoint
+    scale            : upscaling factor (4 for RealESRGAN_x4plus)
+    tile             : tile size for patch-based inference (0 = whole image)
+    tile_pad         : padding between tiles
+    pre_pad          : padding added before processing
+    half             : use FP16 inference (faster on modern GPUs)
+    batch_size       : images processed per GPU batch (kept for API compat;
+                       RealESRGANer processes one image at a time internally)
+    ext              : output extension – "auto" keeps the original extension
+    overwrite        : skip images that already exist in output_dir
+    intermediate_dir : if set, the raw numpy array returned by enhance() is
+                       saved here as <stem>.npy immediately after each call,
+                       before cv2.imwrite() converts it to an image file.
+                       Useful for debugging or downstream processing that needs
+                       the uncompressed float/uint8 array.  Directory is
+                       created automatically if it does not exist.
 
     Returns
     -------
     Number of images successfully upscaled.
     """
     Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    if intermediate_dir is not None:
+        Path(intermediate_dir).mkdir(parents=True, exist_ok=True)
 
     supported_exts = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
     image_files = sorted([
@@ -183,6 +193,13 @@ def upscale_directory(
         tile=tile, tile_pad=tile_pad,
         pre_pad=pre_pad, half=half,
     )
+
+    def _save_intermediate(array: np.ndarray, stem: str) -> None:
+        """Save the raw numpy array from enhance() to intermediate_dir."""
+        if intermediate_dir is None:
+            return
+        npy_path = os.path.join(intermediate_dir, stem + ".npy")
+        np.save(npy_path, array)
 
     success_count = 0
     for filename in tqdm(image_files, desc="Real-ESRGAN upscaling"):
@@ -205,6 +222,7 @@ def upscale_directory(
         try:
             # enhance() expects BGR (OpenCV format) and returns BGR
             output, _ = upsampler.enhance(img, outscale=scale)
+            _save_intermediate(output, stem)  # save raw array before imwrite
             cv2.imwrite(out_path, output)
             success_count += 1
         except RuntimeError as e:
@@ -220,6 +238,7 @@ def upscale_directory(
                 )
                 try:
                     output, _ = cpu_upsampler.enhance(img, outscale=scale)
+                    _save_intermediate(output, stem)  # save raw array before imwrite
                     cv2.imwrite(out_path, output)
                     success_count += 1
                 except Exception as e2:
@@ -286,6 +305,10 @@ if __name__ == "__main__":
                         help="Output extension, e.g. png; 'auto' keeps original")
     parser.add_argument("--overwrite", action="store_true",
                         help="Re-process images that already exist in output_dir")
+    parser.add_argument("--intermediate_dir", default=None,
+                        help="If set, save the raw numpy array from enhance() here as "
+                             "<stem>.npy before writing the final image (useful for "
+                             "debugging or lossless downstream processing)")
     parser.add_argument("--download_only", action="store_true",
                         help="Just download the model weights and exit")
 
@@ -308,4 +331,5 @@ if __name__ == "__main__":
             batch_size=args.batch_size,
             ext=args.ext,
             overwrite=args.overwrite,
+            intermediate_dir=args.intermediate_dir,
         )
