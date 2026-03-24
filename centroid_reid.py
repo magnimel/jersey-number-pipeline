@@ -100,7 +100,7 @@ def generate_features_old(input_folder, output_folder, model_version='res50_mark
             np.save(f, np_feat)
 
 
-def generate_features(input_folder, output_folder, model_version='res50_market', batch_size=64, num_workers=2):
+def generate_features(input_folder, output_folder, model_version='res50_market', batch_size=64, num_workers=2, subset_images=None):
     """
     Optimized batch processing version of feature generation.
     
@@ -143,7 +143,9 @@ def generate_features(input_folder, output_folder, model_version='res50_market',
         images = os.listdir(track_path)
         track_image_counts[track] = len(images)
         for img_name in images:
-            tracklet_paths.append((track, os.path.join(track_path, img_name)))
+            full_path = os.path.join(track_path, img_name)
+            if subset_images is None or full_path in subset_images:
+                tracklet_paths.append((track, full_path))
     
     # Create dataset and dataloader
     dataset = TrackletDataset(tracklet_paths, val_transforms)
@@ -190,11 +192,18 @@ if __name__ == "__main__":
     parser.add_argument('--output_folder', help="Folder to store features in, one file per tracklet")
     parser.add_argument('--batch_size', type=int, default=64, help="Batch size for processing (default: 64)")
     parser.add_argument('--num_workers', type=int, default=2, help="Number of dataloader workers (default: 2)")
+    parser.add_argument('--subset', default=None, help="Path to a JSON file listing image paths to process (for subset runs)")
     args = parser.parse_args()
+
+    subset_images = None
+    if args.subset is not None:
+        import json
+        with open(args.subset, 'r') as f:
+            subset_images = set(json.load(f))
 
     #create if does not exist
     Path(args.output_folder).mkdir(parents=True, exist_ok=True)
 
-    generate_features(args.tracklets_folder, args.output_folder, batch_size=args.batch_size, num_workers=args.num_workers)
+    generate_features(args.tracklets_folder, args.output_folder, batch_size=args.batch_size, num_workers=args.num_workers, subset_images=subset_images)
 
 

@@ -450,7 +450,8 @@ def soccer_net_pipeline(args):
     # 1. generate and store features for each image in each tracklet
     if args.pipeline['feat']:
         print("Generate features")
-        command = f"conda run -n {config.reid_env} --no-capture-output python3 {config.reid_script} --tracklets_folder {image_dir} --output_folder {features_dir} --batch_size 512 --num_workers 2"
+        subset_arg = f"--subset {args.subset}" if args.subset else ""
+        command = f"conda run -n {config.reid_env} --no-capture-output python3 {config.reid_script} --tracklets_folder {image_dir} --output_folder {features_dir} --batch_size 512 --num_workers 2 {subset_arg}"
         success = os.system(command) == 0
         print("Done generating features")
 
