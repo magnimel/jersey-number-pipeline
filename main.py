@@ -52,6 +52,8 @@ def get_soccer_net_raw_legibility_results(args, use_filtered = True, filter = 'g
     for directory in tracklets:
         track_dir = os.path.join(path_to_images, directory)
         if use_filtered:
+            if directory not in filtered:
+                continue
             images = filtered[directory]
         else:
             images = os.listdir(track_dir)
@@ -114,6 +116,8 @@ def get_soccer_net_raw_legibility_results_old(args, use_filtered = True, filter 
     for directory in tqdm(tracklets):
         track_dir = os.path.join(path_to_images, directory)
         if use_filtered:
+            if directory not in filtered:
+                continue
             images = filtered[directory]
         else:
             images = os.listdir(track_dir)
@@ -174,6 +178,8 @@ def get_soccer_net_legibility_results(args, use_filtered = False, filter = 'sim'
     for directory in tracklets:
         track_dir = os.path.join(path_to_images, directory)
         if use_filtered:
+            if directory not in filtered:
+                continue
             images = filtered[directory]
         else:
             images = os.listdir(track_dir)
