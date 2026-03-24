@@ -458,7 +458,8 @@ def soccer_net_pipeline(args):
     #2. identify and remove outliers based on features
     if args.pipeline['filter'] and success:
         print("Identify and remove outliers")
-        command = f"python gaussian_outliers.py --tracklets_folder {image_dir} --output_folder {features_dir}"
+        subset_arg = f"--subset {args.subset}" if args.subset else ""
+        command = f"python gaussian_outliers.py --tracklets_folder {image_dir} --output_folder {features_dir} {subset_arg}"
         success = os.system(command) == 0
         print("Done removing outliers")
 
