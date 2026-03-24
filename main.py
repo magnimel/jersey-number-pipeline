@@ -565,7 +565,7 @@ def soccer_net_pipeline(args):
         _crops_sr_dir = os.path.join(config.dataset['SoccerNet']['working_dir'],
                                      config.dataset['SoccerNet'][args.part]['crops_sr_folder'])
         _crops_sr_imgs = os.path.join(_crops_sr_dir, 'imgs')
-        if args.pipeline.get('esrgan', False) and os.path.isdir(_crops_sr_imgs) and os.listdir(_crops_sr_imgs):
+        if args.esrgan and os.path.isdir(_crops_sr_imgs) and os.listdir(_crops_sr_imgs):
             image_dir = _crops_sr_dir
             print(f"[STR] Using super-resolved crops from {image_dir}")
         else:

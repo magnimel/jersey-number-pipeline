@@ -170,7 +170,7 @@ def setup_esrgan(root_dir):
         print("realesrgan package already installed.")
     except ImportError:
         print("Installing realesrgan and basicsr packages...")
-        os.system("pip install realesrgan basicsr")
+        os.system("pip install 'setuptools<58' realesrgan basicsr")
 
 
 if __name__ == '__main__':
