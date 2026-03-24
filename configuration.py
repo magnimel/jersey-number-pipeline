@@ -42,7 +42,7 @@ dataset = {'SoccerNet':
                         'pose_input_json': 'pose_input.json',
                         'pose_output_json': 'pose_results.json',
                         'crops_folder': 'crops',
-                        'crops_sr_folder': 'crops_sr',
+                        'crops_sr_folder': 'test/crops_sr',
                         'jersey_id_result': 'jersey_id_results.json',
                         'final_result': 'final_results.json'
                     },
@@ -54,7 +54,7 @@ dataset = {'SoccerNet':
                         'legible_result': 'legible_val.json',
                         'soccer_ball_list': 'soccer_ball_val.json',
                         'crops_folder': 'crops_val',
-                        'crops_sr_folder': 'crops_sr_val',
+                        'crops_sr_folder': 'test/crops_sr_val',
                         'sim_filtered': 'val/main_subject_0.4.json',
                         'gauss_filtered': 'val/main_subject_gauss_th=3.5_r=3.json',
                         'pose_input_json': 'pose_input_val.json',
@@ -73,7 +73,9 @@ dataset = {'SoccerNet':
                      'pose_input_json': 'pose_input_train.json',
                      'pose_output_json': 'pose_results_train.json',
                      'crops_folder': 'crops_train',
-                     'crops_sr_folder': 'crops_sr_train',
+                     'crops_sr_folder': 'test/crops_sr_train',
+                     'jersey_id_result': 'jersey_id_results_train.json',
+                     'final_result': 'final_results_train.json',
                      'raw_legible_result': 'train_raw_legible_combined.json'
                  },
                  'challenge': {
@@ -88,7 +90,7 @@ dataset = {'SoccerNet':
                         'pose_input_json': 'challenge_pose_input.json',
                         'pose_output_json': 'challenge_pose_results.json',
                         'crops_folder': 'challenge_crops',
-                        'crops_sr_folder': 'challenge_crops_sr',
+                        'crops_sr_folder': 'test/crops_sr_challenge',
                         'jersey_id_result': 'challenge_jersey_id_results.json',
                         'final_result': 'challenge_final_results.json',
                         'raw_legible_result': 'challenge_raw_legible_vit.json'
