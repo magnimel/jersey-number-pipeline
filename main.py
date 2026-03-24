@@ -329,7 +329,7 @@ def soccer_net_pipeline(args):
         print("Enhancing crops with Real-ESRGAN...")
         try:
             input_rel = config.dataset['SoccerNet'][args.part]['crops_folder']
-            output_rel = config.dataset['SoccerNet'][args.part]['sr_crops_folder']
+            output_rel = config.dataset['SoccerNet'][args.part]['crops_sr_folder']
             
             input_path = os.path.join(config.dataset['SoccerNet']['working_dir'], input_rel, 'imgs')
             output_path = os.path.join(config.dataset['SoccerNet']['working_dir'], output_rel, 'imgs')
@@ -346,7 +346,7 @@ def soccer_net_pipeline(args):
     if args.pipeline['str'] and success:
         print("Predict numbers")
         
-        sr_folder = os.path.join(config.dataset['SoccerNet']['working_dir'], config.dataset['SoccerNet'][args.part]['sr_crops_folder'])
+        sr_folder = os.path.join(config.dataset['SoccerNet']['working_dir'], config.dataset['SoccerNet'][args.part]['crops_sr_folder'])
         std_folder = os.path.join(config.dataset['SoccerNet']['working_dir'], config.dataset['SoccerNet'][args.part]['crops_folder'])
 
         if os.path.exists(sr_folder) and any(os.scandir(sr_folder)):

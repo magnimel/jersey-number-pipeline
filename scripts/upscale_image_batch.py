@@ -6,6 +6,7 @@ def upscale_image_batch(input_root, output_root, model_name="realesrgan-x4plus")
 
     base_dir = os.path.dirname(os.path.abspath(__file__))
     exe_path = os.path.join(base_dir, "realesrgan-ncnn-vulkan")
+    models_path = os.path.normpath(os.path.join(base_dir, "../models"))
     
     valid_exts = ('.png', '.jpg', '.jpeg', '.webp')
     all_images = []
@@ -33,13 +34,14 @@ def upscale_image_batch(input_root, output_root, model_name="realesrgan-x4plus")
             "-i", in_file, 
             "-o", out_file, 
             "-n", model_name, 
-            "-s", "4"
+            "-s", "4",
+            "-m", models_path
         ], capture_output=True)
 
-# if __name__ == "__main__":
-#     current_script_dir = os.path.dirname(os.path.abspath(__file__))
+if __name__ == "__main__":
+    current_script_dir = os.path.dirname(os.path.abspath(__file__))
 
-#     input_path = os.path.join(current_script_dir, "../out/SoccerNetResults/crops")
-#     output_path = os.path.join(current_script_dir, "../out/SoccerNetResults/sr-crops")
+    input_path = os.path.normpath(os.path.join(current_script_dir, "../out/SoccerNetResults/crops/imgs"))
+    output_path = os.path.normpath(os.path.join(current_script_dir, "../out/SoccerNetResults/crops_sr/imgs"))
 
-#     upscale_image_batch(input_path, output_path)
+    upscale_image_batch(input_path, output_path)
