@@ -7,6 +7,7 @@ import helpers
 from tqdm import tqdm
 import configuration as config
 from pathlib import Path
+from scripts.upscale_image_batch import upscale_image_batch
 
 def get_soccer_net_raw_legibility_results(args, use_filtered = True, filter = 'gauss', exclude_balls=True):
     root_dir = config.dataset['SoccerNet']['root_dir']
@@ -323,15 +324,40 @@ def soccer_net_pipeline(args):
             success = False
         print("Done generating crops")
 
+    # 6.5 Super Resolution (Standalone Step)
+    if args.pipeline['upscale'] and success:
+        print("Enhancing crops with Real-ESRGAN...")
+        try:
+            input_rel = config.dataset['SoccerNet'][args.part]['crops_folder']
+            output_rel = config.dataset['SoccerNet'][args.part]['sr_crops_folder']
+            
+            input_path = os.path.join(config.dataset['SoccerNet']['working_dir'], input_rel, 'imgs')
+            output_path = os.path.join(config.dataset['SoccerNet']['working_dir'], output_rel, 'imgs')
+            
+            upscale_image_batch(input_path, output_path)
+            print("Done enhancing crops")
+        except Exception as e:
+            print(f"Upscaling failed: {e}")
+            success = False
+            
     str_result_file = os.path.join(config.dataset['SoccerNet']['working_dir'],
                                    config.dataset['SoccerNet'][args.part]['jersey_id_result'])
-    #7. run STR system on all crops
+    # 7. run STR system on all crops
     if args.pipeline['str'] and success:
         print("Predict numbers")
-        image_dir = os.path.join(config.dataset['SoccerNet']['working_dir'], config.dataset['SoccerNet'][args.part]['crops_folder'])
+        
+        sr_folder = os.path.join(config.dataset['SoccerNet']['working_dir'], config.dataset['SoccerNet'][args.part]['sr_crops_folder'])
+        std_folder = os.path.join(config.dataset['SoccerNet']['working_dir'], config.dataset['SoccerNet'][args.part]['crops_folder'])
 
-        command = f"conda run -n {config.str_env} python3 str.py  {config.dataset['SoccerNet']['str_model']}\
-            --data_root={image_dir} --batch_size=1 --inference --result_file {str_result_file}"
+        if os.path.exists(sr_folder) and any(os.scandir(sr_folder)):
+            image_dir = sr_folder
+            print(f"Using ENHANCED images from: {image_dir}")
+        else:
+            image_dir = std_folder
+            print(f"Using ORIGINAL images from: {image_dir}")
+
+        command = f"conda run -n {config.str_env} python3 str.py {config.dataset['SoccerNet']['str_model']} " \
+                  f"--data_root={image_dir} --batch_size=1 --inference --result_file {str_result_file}"
         success = os.system(command) == 0
         print("Done predict numbers")
 
@@ -379,6 +405,7 @@ if __name__ == '__main__':
                        "legible_eval": False,
                        "pose": True,
                        "crops": True,
+                       "upscale": True,
                        "str": True,
                        "combine": True,
                        "eval": True}
