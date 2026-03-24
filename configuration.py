@@ -28,6 +28,7 @@ dataset = {'SoccerNet':
                         'pose_input_json': 'pose_input.json',
                         'pose_output_json': 'pose_results.json',
                         'crops_folder': 'crops',
+                        'sr_crops_folder': 'sr-crops',
                         'jersey_id_result': 'jersey_id_results.json',
                         'final_result': 'final_results.json'
                     },
