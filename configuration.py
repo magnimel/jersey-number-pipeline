@@ -1,3 +1,5 @@
+main_env = 'jersey'  # conda env that runs main.py and esrgan.py
+
 pose_home = 'pose/ViTPose'
 pose_env = 'vitpose'
 

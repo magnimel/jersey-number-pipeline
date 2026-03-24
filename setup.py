@@ -165,12 +165,14 @@ def setup_esrgan(root_dir):
         print(f"RealESRGAN weights already present at {weight_path}")
 
     # Install the realesrgan Python package if not already available
-    try:
-        import realesrgan  # noqa: F401
-        print("realesrgan package already installed.")
-    except ImportError:
+    env_name = cfg.main_env
+    check = os.popen(f"conda run -n {env_name} python -c 'import realesrgan' 2>&1").read()
+    if 'ModuleNotFoundError' in check or 'No module named' in check:
         print("Installing realesrgan and basicsr packages...")
-        os.system("pip install 'setuptools<58' realesrgan basicsr")
+        os.system(f"conda run --live-stream -n {env_name} pip install 'setuptools<58'")
+        os.system(f"conda run --live-stream -n {env_name} pip install --no-build-isolation basicsr realesrgan")
+    else:
+        print("realesrgan package already installed.")
 
 
 if __name__ == '__main__':
