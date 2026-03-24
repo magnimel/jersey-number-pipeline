@@ -110,8 +110,8 @@ def setup_str(root):
 
     if not env_name in get_conda_envs():
         make_conda_env(env_name, libs="python=3.9")
-        os.system(f"make torch-cu117")
         os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip")
+        os.system(f"conda run --live-stream -n {env_name} pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118")
         os.system(f"conda run --live-stream -n {env_name} pip install -r requirements/core.cu117.txt -e .[train,test]")
 
     os.chdir(root)
