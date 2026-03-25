@@ -141,29 +141,44 @@ def download_models(root_dir, dataset):
         gdown.download(source_url, save_path)
 
 def setup_esrgan(root):
-    # Following the 'setup_reid' structure: check for the container folder
-    models_folder_name = "models"
-    models_folder_path = os.path.join(root, models_folder_name)
+    import shutil
 
-    if not models_folder_name in os.listdir(root):
-        # Create the models folder at root
-        os.system(f"mkdir {models_folder_path}")
+    models_folder_path = os.path.join(root, "models")
+    os.makedirs(models_folder_path, exist_ok=True)
 
-        # Download .param file
-        print("Downloading Real-ESRGAN param file...")
+    # Install Vulkan if missing
+    if shutil.which("vulkaninfo") is None:
+        print("Installing Vulkan runtime...")
+        os.system("apt-get update -y")
+        os.system("apt-get install -y libvulkan1 vulkan-tools")
+    else:
+        print("Vulkan already installed.")
+
+    # Verify Vulkan library exists
+    if os.system("ldconfig -p | grep libvulkan.so.1 > /dev/null") != 0:
+        print("Vulkan not properly installed or not visible.")
+
+    # Model paths
+    param_path = os.path.join(models_folder_path, "realesrgan-x4plus.param")
+    bin_path   = os.path.join(models_folder_path, "realesrgan-x4plus.bin")
+
+    # Download param if missing
+    if not os.path.isfile(param_path):
+        print("Downloading param file...")
         url_param = cfg.dataset['SoccerNet']['sr_model_param_url']
-        save_path_param = os.path.join(models_folder_path, "realesrgan-x4plus.param")
-        gdown.download(url_param, save_path_param)
+        gdown.download(url_param, param_path, quiet=False)
 
-        # Download .bin file
-        print("Downloading Real-ESRGAN bin file...")
+    # Download bin if missing
+    if not os.path.isfile(bin_path):
+        print("Downloading bin file...")
         url_bin = cfg.dataset['SoccerNet']['sr_model_bin_url']
-        save_path_bin = os.path.join(models_folder_path, "realesrgan-x4plus.bin")
-        gdown.download(url_bin, save_path_bin)
-        
-        # Ensure the executable in scripts has permissions
-        os.system("chmod +x scripts/realesrgan-ncnn-vulkan")
-        
+        gdown.download(url_bin, bin_path, quiet=False)
+
+    # Ensure executable permission
+    exe_path = os.path.join(root, "scripts", "realesrgan-ncnn-vulkan")
+    if os.path.exists(exe_path):
+        os.system(f"chmod +x {exe_path}")
+                
 def setup_sam(root_dir):
     os.chdir(root_dir)
     repo_name = 'sam2'
