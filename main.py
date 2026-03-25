@@ -274,7 +274,7 @@ def detect_pipeline_stage(args):
         # Check which stages have been completed
         if os.path.exists(soccer_ball_list):
             stages.append('soccer_ball_filter')
-        if os.path.exists(features_dir):
+        if os.path.isdir(features_dir) and any(f.endswith('_features.npy') for f in os.listdir(features_dir)):
             stages.append('feat')
         gauss_filter_file = os.path.join(features_dir, 'main_subject_gauss_th=3.5_r=3.json')
         if os.path.exists(gauss_filter_file):

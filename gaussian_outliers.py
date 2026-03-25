@@ -21,7 +21,8 @@ def get_main_subject(image_folder, feature_folder, threshold = 3.5, rounds = 3, 
     for tr in tqdm(tracks):
         images = os.listdir(os.path.join(image_folder, tr))
         features_path = os.path.join(feature_folder, f"{tr}_features.npy")
-        #print(features_path)
+        if not os.path.exists(features_path):
+            continue
         with open(features_path, 'rb') as f:
             features = np.load(f)
         if len(images) <= 2:
