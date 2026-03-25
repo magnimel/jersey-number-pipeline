@@ -87,6 +87,9 @@ dataset = {'SoccerNet':
 
                  #'str_model': 'pretrained=parseq',
                  'str_model_url': "https://drive.google.com/uc?id=1uRln22tlhneVt3P6MePmVxBWSLMsL3bm",
+                 
+                 'sr_model_param_url': 'https://drive.google.com/uc?id=1WcXm_CXPgcM0qliV-KSoe4_6dX9P_Z60',
+                 'sr_model_bin_url': 'https://drive.google.com/uc?id=1gVWYQynNTkC6uyHRIrz4jd09pBOcRS6e',
                 },
            "Hockey": {
                  'root_dir': 'data/Hockey',

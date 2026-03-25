@@ -140,6 +140,30 @@ def download_models(root_dir, dataset):
         source_url = cfg.dataset[dataset]['legibility_model_url']
         gdown.download(source_url, save_path)
 
+def setup_esrgan(root):
+    # Following the 'setup_reid' structure: check for the container folder
+    models_folder_name = "models"
+    models_folder_path = os.path.join(root, models_folder_name)
+
+    if not models_folder_name in os.listdir(root):
+        # Create the models folder at root
+        os.system(f"mkdir {models_folder_path}")
+
+        # Download .param file
+        print("Downloading Real-ESRGAN param file...")
+        url_param = cfg.dataset['SoccerNet']['sr_model_param_url']
+        save_path_param = os.path.join(models_folder_path, "realesrgan-x4plus.param")
+        gdown.download(url_param, save_path_param)
+
+        # Download .bin file
+        print("Downloading Real-ESRGAN bin file...")
+        url_bin = cfg.dataset['SoccerNet']['sr_model_bin_url']
+        save_path_bin = os.path.join(models_folder_path, "realesrgan-x4plus.bin")
+        gdown.download(url_bin, save_path_bin)
+        
+        # Ensure the executable in scripts has permissions
+        os.system("chmod +x scripts/realesrgan-ncnn-vulkan")
+        
 def setup_sam(root_dir):
     os.chdir(root_dir)
     repo_name = 'sam2'
@@ -163,7 +187,8 @@ if __name__ == '__main__':
     setup_pose(root_dir)
     download_models_common(root_dir)
     setup_str(root_dir)
-
+    download_sr_models(root_dir)
+    
     #SoccerNet only
     if not args.dataset == 'Hockey':
         setup_reid(root_dir)
