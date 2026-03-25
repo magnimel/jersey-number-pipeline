@@ -150,40 +150,49 @@ def generate_features(input_folder, output_folder, model_version='res50_market',
     # Create dataset and dataloader
     dataset = TrackletDataset(tracklet_paths, val_transforms)
     dataloader = DataLoader(
-        dataset, 
-        batch_size=batch_size, 
+        dataset,
+        batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
         pin_memory=use_cuda,
-        persistent_workers=num_workers > 0,  # Keep workers alive between iterations
-        prefetch_factor=4 if num_workers > 0 else None  # Preload 4 batches per worker
+        persistent_workers=num_workers > 0,
+        prefetch_factor=2 if num_workers > 0 else None
     )
-    
-    # Process all images in batches
+
+    # Process all images in batches, saving each track as soon as it is complete
     print(f"Generating features in batches (batch_size={batch_size}, num_workers={num_workers})...")
-    track_features = {track: [] for track in tracks}
-    
+    track_features = {}  # only allocate for tracks we actually see
+
+    def _flush_track(track_id):
+        if track_id in track_features and track_features[track_id]:
+            output_file = os.path.join(output_folder, f"{track_id}_features.npy")
+            np_feat = np.array(track_features.pop(track_id))
+            with open(output_file, 'wb') as f:
+                np.save(f, np_feat)
+
+    prev_track_id = None
     with torch.no_grad():
         for track_ids, images in tqdm(dataloader, total=len(dataloader)):
             if use_cuda:
                 images = images.cuda()
-            
-            # Extract features
+
             _, global_feat = model.backbone(images)
             global_feat = model.bn(global_feat)
             features = global_feat.cpu().numpy()
-            
-            # Group features by track ID
+
             for track_id, feat in zip(track_ids, features):
+                if track_id not in track_features:
+                    track_features[track_id] = []
+                    # When we see a new track, the previous one is complete — flush it
+                    if prev_track_id is not None and prev_track_id != track_id:
+                        _flush_track(prev_track_id)
                 track_features[track_id].append(feat.reshape(-1,))
-    
-    # Save features for each track
+                prev_track_id = track_id
+
+    # Flush any remaining tracks
     print("Saving features...")
-    for track in tracks:
-        output_file = os.path.join(output_folder, f"{track}_features.npy")
-        np_feat = np.array(track_features[track])
-        with open(output_file, 'wb') as f:
-            np.save(f, np_feat)
+    for track_id in list(track_features.keys()):
+        _flush_track(track_id)
 
 
 if __name__ == "__main__":
