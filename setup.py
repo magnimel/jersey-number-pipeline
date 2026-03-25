@@ -185,9 +185,9 @@ if __name__ == '__main__':
     # common for both datasets
     setup_sam(root_dir)
     setup_pose(root_dir)
+    setup_esrgan(root_dir)
     download_models_common(root_dir)
     setup_str(root_dir)
-    download_sr_models(root_dir)
     
     #SoccerNet only
     if not args.dataset == 'Hockey':
