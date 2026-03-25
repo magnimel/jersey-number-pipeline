@@ -311,9 +311,9 @@ def main():
         shuffle=False,
         num_workers=args.num_workers,
         collate_fn=pose_collate_fn,
-        pin_memory=True,
-        prefetch_factor=2,
-        persistent_workers=True if args.num_workers > 0 else False,
+        pin_memory=False,
+        prefetch_factor=2 if args.num_workers > 0 else None,
+        persistent_workers=False,
     )
 
     # Run pipelined inference
