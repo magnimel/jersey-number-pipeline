@@ -334,8 +334,16 @@ def soccer_net_pipeline(args):
             input_path = os.path.join(config.dataset['SoccerNet']['working_dir'], input_rel, 'imgs')
             output_path = os.path.join(config.dataset['SoccerNet']['working_dir'], output_rel, 'imgs')
             
-            upscale_image_batch(input_path, output_path)
-            print("Done enhancing crops")
+            failed, total = upscale_image_batch(input_path, output_path)
+
+            if total == 0:
+                print("Upscaling failed: no input images")
+                success = False
+            elif failed > 0:
+                print(f"Upscaling had failures: {failed}/{total}")
+            else:
+                print("Done enhancing crops")
+
         except Exception as e:
             print(f"Upscaling failed: {e}")
             success = False

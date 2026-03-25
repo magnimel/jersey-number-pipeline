@@ -151,8 +151,6 @@ def setup_esrgan(root):
         print("Installing Vulkan runtime...")
         os.system("apt-get update -y")
         os.system("apt-get install -y libvulkan1 vulkan-tools")
-    else:
-        print("Vulkan already installed.")
 
     # Verify Vulkan library exists
     if os.system("ldconfig -p | grep libvulkan.so.1 > /dev/null") != 0:
