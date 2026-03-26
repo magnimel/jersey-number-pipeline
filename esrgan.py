@@ -309,17 +309,20 @@ def upscale_directory(
             pass
 
         best_bs, best_rate = candidates[0], 0.0
+        n_trials = 3
         print("[ESRGAN] Calibrating batch size ...")
         for bs in candidates:
             imgs = (sample_imgs * ((bs // len(sample_imgs)) + 1))[:bs]
             try:
-                torch.cuda.synchronize()
-                t0 = time.perf_counter()
-                _run_batch(imgs, upsampler, scale, pre_pad, half)
-                torch.cuda.synchronize()
-                elapsed = time.perf_counter() - t0
-                rate = bs / elapsed
-                print(f"  batch_size={bs:4d}  →  {rate:.1f} img/s")
+                times = []
+                for _ in range(n_trials):
+                    torch.cuda.synchronize()
+                    t0 = time.perf_counter()
+                    _run_batch(imgs, upsampler, scale, pre_pad, half)
+                    torch.cuda.synchronize()
+                    times.append(time.perf_counter() - t0)
+                rate = bs / sorted(times)[len(times) // 2]  # median time → rate
+                print(f"  batch_size={bs:4d}  →  {rate:.1f} img/s  (trials: {[f'{t:.2f}s' for t in times]})")
                 if rate > best_rate:
                     best_rate, best_bs = rate, bs
             except RuntimeError as e:
