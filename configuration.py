@@ -1,3 +1,5 @@
+main_env = 'jersey'  # conda env that runs main.py and esrgan.py
+
 pose_home = 'pose/ViTPose'
 pose_env = 'vitpose'
 
@@ -10,6 +12,23 @@ reid_env = 'centroids'
 reid_script = 'centroid_reid.py'
 
 reid_home = 'reid/'
+
+# ---------------------------------------------------------------------------
+# Real-ESRGAN configuration
+# ---------------------------------------------------------------------------
+# Path to the RealESRGAN_x4plus.pth checkpoint (downloaded by setup.py).
+esrgan_model = 'models/RealESRGAN_x4plus.pth'
+# Upscaling factor – must match the model (4 for RealESRGAN_x4plus).
+esrgan_scale = 4
+# Tile size for patch-based inference; 0 = whole image (needs more VRAM).
+# Set to 256 or 512 if you run out of GPU memory on small GPUs.
+esrgan_tile = 0
+# Use FP16 inference for speed on modern GPUs (Ampere / Turing and above).
+esrgan_half = False
+# Number of images processed per GPU forward pass. On OOM the pipeline halves
+# this automatically until it finds a size that fits, so setting it high is safe.
+esrgan_batch_size = 128
+# ---------------------------------------------------------------------------
 
 
 dataset = {'SoccerNet':
@@ -28,6 +47,7 @@ dataset = {'SoccerNet':
                         'pose_input_json': 'pose_input.json',
                         'pose_output_json': 'pose_results.json',
                         'crops_folder': 'crops',
+                        'crops_sr_folder': 'test/crops_sr',
                         'jersey_id_result': 'jersey_id_results.json',
                         'final_result': 'final_results.json'
                     },
@@ -39,11 +59,14 @@ dataset = {'SoccerNet':
                         'legible_result': 'legible_val.json',
                         'soccer_ball_list': 'soccer_ball_val.json',
                         'crops_folder': 'crops_val',
+                        'crops_sr_folder': 'val/crops_sr',
                         'sim_filtered': 'val/main_subject_0.4.json',
                         'gauss_filtered': 'val/main_subject_gauss_th=3.5_r=3.json',
                         'pose_input_json': 'pose_input_val.json',
                         'pose_output_json': 'pose_results_val.json',
-                        'jersey_id_result': 'jersey_id_results_validation.json'
+                        'jersey_id_result': 'jersey_id_results_validation.json',
+                        'final_result': 'final_results_val.json',
+                        'raw_legible_result': 'val_raw_legible_combined.json'
                     },
                  'train': {
                      'images': 'train/images',
@@ -56,6 +79,10 @@ dataset = {'SoccerNet':
                      'gauss_filtered': 'train/main_subject_gauss_th=3.5_r=3.json',
                      'pose_input_json': 'pose_input_train.json',
                      'pose_output_json': 'pose_results_train.json',
+                     'crops_folder': 'crops_train',
+                     'crops_sr_folder': 'train/crops_sr',
+                     'jersey_id_result': 'jersey_id_results_train.json',
+                     'final_result': 'final_results_train.json',
                      'raw_legible_result': 'train_raw_legible_combined.json'
                  },
                  'challenge': {
@@ -70,6 +97,7 @@ dataset = {'SoccerNet':
                         'pose_input_json': 'challenge_pose_input.json',
                         'pose_output_json': 'challenge_pose_results.json',
                         'crops_folder': 'challenge_crops',
+                        'crops_sr_folder': 'challenge/crops_sr',
                         'jersey_id_result': 'challenge_jersey_id_results.json',
                         'final_result': 'challenge_final_results.json',
                         'raw_legible_result': 'challenge_raw_legible_vit.json'
@@ -82,6 +110,7 @@ dataset = {'SoccerNet':
                  'legibility_model_url':  "https://drive.google.com/uc?id=1QDAqZvIbf0UPP9disdBsqcdIB0e84ZWa",
                  'pose_model_url': 'https://drive.google.com/uc?id=1gHOcfVvmwVDuJsn9c-a-v39vIqFpfbH0',
                  'str_model': 'models/parseq_epoch=24-step=2575-val_accuracy=95.6044-val_NED=96.3255.ckpt',
+                 'esrgan_model': 'models/RealESRGAN_x4plus.pth',
 
                  #'str_model': 'pretrained=parseq',
                  'str_model_url': "https://drive.google.com/uc?id=1DULUhorGHsozOumtSocon0V-kbKwFCWG",

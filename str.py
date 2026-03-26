@@ -71,27 +71,103 @@ def print_results_table(results: List[Result], file=None):
           f'| {c.confidence:>10.2f} | {c.label_length:>12.2f} |', file=file)
 
 
-def run_inference(model, data_root, result_file, img_size):
-    # load images one by one, save paths and result
+def _infer_batch(model, images: list, device):
+    """Run a single forward pass and return (preds, probs, logits_np, probs_full_np)."""
+    batch = torch.stack(images).to(device)
+    logits = model.forward(batch)
+    probs_full = logits[:, :3, :11].softmax(-1)
+    preds, probs = model.tokenizer.decode(probs_full)
+    return preds, probs, logits[:, :3, :11].cpu().detach().numpy().tolist(), probs_full.cpu().detach().numpy().tolist()
+
+
+def _calibrate_str_batch_size(model, sample_images: list, max_bs: int) -> int:
+    import time
+    device = model.device
+    candidates = [bs for bs in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
+                  if bs <= max_bs and bs <= len(sample_images)]
+    if not candidates:
+        return max_bs
+
+    # warmup
+    try:
+        _infer_batch(model, sample_images[:1], device)
+        if str(device) != 'cpu':
+            torch.cuda.synchronize()
+    except Exception:
+        pass
+
+    best_bs, best_rate = candidates[0], 0.0
+    n_trials = 3
+    print("[STR] Calibrating batch size ...")
+    for bs in candidates:
+        imgs = (sample_images * ((bs // len(sample_images)) + 1))[:bs]
+        try:
+            times = []
+            for _ in range(n_trials):
+                if str(device) != 'cpu':
+                    torch.cuda.synchronize()
+                t0 = time.perf_counter()
+                _infer_batch(model, imgs, device)
+                if str(device) != 'cpu':
+                    torch.cuda.synchronize()
+                times.append(time.perf_counter() - t0)
+            rate = bs / sorted(times)[len(times) // 2]
+            print(f"  batch_size={bs:4d}  →  {rate:.1f} img/s  (trials: {[f'{t:.2f}s' for t in times]})")
+            if rate > best_rate:
+                best_rate, best_bs = rate, bs
+        except RuntimeError as e:
+            if "out of memory" in str(e).lower():
+                torch.cuda.empty_cache()
+                print(f"  batch_size={bs:4d}  →  OOM (skipping)")
+                break
+            raise
+    print(f"[STR] Selected batch_size={best_bs} ({best_rate:.1f} img/s)")
+    return best_bs
+
+
+def run_inference(model, data_root, result_file, img_size, batch_size=512):
     file_dir = os.path.join(data_root, 'imgs')
-    filenames = os.listdir(file_dir)
-    filenames.sort()
+    filenames = sorted(os.listdir(file_dir))
+    transform = SceneTextDataModule.get_transform(img_size)
+    device = model.device
+
+    # Load a sample for calibration then reuse for the actual run
+    n_sample = min(256, len(filenames))
+    sample_images = []
+    for filename in filenames[:n_sample]:
+        sample_images.append(transform(Image.open(os.path.join(file_dir, filename)).convert('RGB')))
+
+    if str(device) != 'cpu' and sample_images:
+        current_bs = _calibrate_str_batch_size(model, sample_images, batch_size)
+    else:
+        current_bs = batch_size
+
     results = {}
-    for filename in tqdm(filenames):
-        image = Image.open(os.path.join(file_dir, filename)).convert('RGB')
-        transform = SceneTextDataModule.get_transform(img_size)
-        image = transform(image)
-        image = image.unsqueeze(0)
-        logits = model.forward(image.to(model.device))
-        #convert to 3 by 10
-        probs_full = logits[:,:3,:11].softmax(-1)
-        preds, probs = model.tokenizer.decode(probs_full)
-        logits = logits[:,:3,:11].cpu().detach().numpy()[0].tolist()
-        # probs = logits.softmax(-1)
-        # preds, probs = model.tokenizer.decode(probs)
-        probs_full = probs_full.cpu().detach().numpy()[0].tolist()
-        confidence = probs[0].cpu().detach().numpy().squeeze().tolist()
-        results[filename] = {'label':preds[0], 'confidence':confidence, 'raw': probs_full, 'logits':logits}
+    i = 0
+    pbar = tqdm(total=len(filenames))
+    while i < len(filenames):
+        batch_filenames = filenames[i:i + current_bs]
+        images = []
+        for filename in batch_filenames:
+            images.append(transform(Image.open(os.path.join(file_dir, filename)).convert('RGB')))
+        try:
+            preds, probs, logits_np, probs_full_np = _infer_batch(model, images, device)
+            for j, filename in enumerate(batch_filenames):
+                confidence = probs[j].cpu().detach().numpy().squeeze().tolist()
+                results[filename] = {'label': preds[j], 'confidence': confidence,
+                                     'raw': probs_full_np[j], 'logits': logits_np[j]}
+            i += len(batch_filenames)
+            pbar.update(len(batch_filenames))
+        except RuntimeError as e:
+            if "out of memory" not in str(e).lower():
+                raise
+            torch.cuda.empty_cache()
+            new_bs = current_bs // 2
+            if new_bs == 0:
+                raise
+            print(f"[STR] CUDA OOM at batch_size={current_bs}; retrying with {new_bs}.")
+            current_bs = new_bs
+    pbar.close()
     with open(result_file, 'w') as f:
         json.dump(results, f)
 
@@ -123,7 +199,7 @@ def temperature_scale(logits, t):
     new_logits = torch.div(logits, temp)
     return new_logits
 
-temperature = nn.Parameter(torch.ones(1).cuda() * 1.5)
+temperature = nn.Parameter(torch.ones(1) * 1.5)
 def set_temperature(model, data_root, img_size):
     """
     Tune the tempearature of the model (using the validation set).
@@ -265,7 +341,7 @@ def main():
     hp = model.hparams
 
     if args.inference:
-        run_inference(model, args.data_root, args.result_file, hp.img_size)
+        run_inference(model, args.data_root, args.result_file, hp.img_size, batch_size=args.batch_size)
         exit()
     if args.tune_temperature:
         set_temperature(model, args.data_root, hp.img_size)

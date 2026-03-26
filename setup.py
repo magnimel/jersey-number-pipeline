@@ -110,9 +110,10 @@ def setup_str(root):
 
     if not env_name in get_conda_envs():
         make_conda_env(env_name, libs="python=3.9")
-        os.system(f"make torch-cu117")
         os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip")
-        os.system(f"conda run --live-stream -n {env_name} pip install -r requirements/core.cu117.txt -e .[train,test]")
+        os.system(f"conda run --live-stream -n {env_name} pip install -r requirements/core.txt -e .[train,test]")
+        os.system(f"conda run --live-stream -n {env_name} pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121")
+        os.system(f"conda run --live-stream -n {env_name} pip install 'numpy<2'")
 
     os.chdir(root)
 
@@ -150,6 +151,31 @@ def setup_sam(root_dir):
         os.system(f"git clone --recurse-submodules {src_url} {os.path.join(root_dir, repo_name)}")
 
 
+def setup_esrgan(root_dir):
+    """Install Real-ESRGAN and download the x4plus model weights."""
+    models_dir = os.path.join(root_dir, 'models')
+    os.makedirs(models_dir, exist_ok=True)
+
+    weight_path = os.path.join(models_dir, 'RealESRGAN_x4plus.pth')
+    if not os.path.isfile(weight_path):
+        print("Downloading RealESRGAN_x4plus weights...")
+        url = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth"
+        urllib.request.urlretrieve(url, weight_path)
+        print(f"Saved to {weight_path}")
+    else:
+        print(f"RealESRGAN weights already present at {weight_path}")
+
+    # Install the realesrgan Python package if not already available
+    env_name = cfg.main_env
+    check = os.popen(f"conda run -n {env_name} python -c 'import realesrgan' 2>&1").read()
+    if 'ModuleNotFoundError' in check or 'No module named' in check:
+        print("Installing realesrgan and basicsr packages...")
+        os.system(f"conda run --live-stream -n {env_name} pip install 'setuptools<58'")
+        os.system(f"conda run --live-stream -n {env_name} pip install --no-build-isolation basicsr realesrgan")
+    else:
+        print("realesrgan package already installed.")
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('dataset', default='all', help="Options: all, SoccerNet, Hockey")
@@ -160,6 +186,7 @@ if __name__ == '__main__':
 
     # common for both datasets
     setup_sam(root_dir)
+    setup_esrgan(root_dir)
     setup_pose(root_dir)
     download_models_common(root_dir)
     setup_str(root_dir)
