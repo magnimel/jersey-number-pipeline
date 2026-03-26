@@ -143,12 +143,60 @@ def download_models(root_dir, dataset):
 
 def setup_sam(root_dir):
     os.chdir(root_dir)
-    repo_name = 'sam2'
+    repo_name = 'sam'
     src_url = 'https://github.com/davda54/sam'
 
-    if not repo_name in os.listdir(root_dir):
+    # Migrate old clone location if necessary
+    old_path = os.path.join(root_dir, 'sam2')
+    new_path = os.path.join(root_dir, repo_name)
+    if os.path.isdir(old_path) and not os.path.isdir(new_path):
+        os.rename(old_path, new_path)
+
+    if repo_name not in os.listdir(root_dir):
         # clone source repo
         os.system(f"git clone --recurse-submodules {src_url} {os.path.join(root_dir, repo_name)}")
+
+
+def setup_main_env(root_dir):
+    """Create the 'jersey' conda env and install all runtime dependencies."""
+    env_name = cfg.main_env
+    if env_name in get_conda_envs():
+        print(f"Conda env '{env_name}' already exists, skipping creation.")
+        return
+
+    print(f"Creating conda env '{env_name}' (python=3.9)...")
+    make_conda_env(env_name, libs="python=3.9")
+    os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip -y")
+
+    pkgs = [
+        "torch==1.9.0+cu111 torchvision==0.10.0+cu111 torchaudio==0.9.0 "
+        "-f https://download.pytorch.org/whl/torch_stable.html",
+        "'numpy<2.0' opencv-python==4.10.0.84",
+        "'setuptools<70.0.0'",
+        "realesrgan basicsr",
+        "pandas==2.2.3 tqdm==4.66.5 scipy==1.13.1 SoccerNet gdown",
+    ]
+    for pkg in pkgs:
+        os.system(f"conda run --live-stream -n {env_name} pip install {pkg}")
+
+
+def copy_reid_models(root_dir):
+    """Copy downloaded reid checkpoints into centroids-reid/models/."""
+    import shutil
+    src_dir = os.path.join(root_dir, 'models')
+    dst_dir = os.path.join(root_dir, 'reid', 'centroids-reid', 'models')
+    os.makedirs(dst_dir, exist_ok=True)
+    for fname in ['market1501_resnet50_256_128_epoch_120.ckpt',
+                  'dukemtmcreid_resnet50_256_128_epoch_120.ckpt']:
+        src = os.path.join(src_dir, fname)
+        dst = os.path.join(dst_dir, fname)
+        if os.path.isfile(src) and not os.path.isfile(dst):
+            shutil.copy2(src, dst)
+            print(f"Copied {fname} to {dst_dir}")
+        elif os.path.isfile(dst):
+            print(f"Reid model already present: {fname}")
+        else:
+            print(f"Warning: source model not found: {src}")
 
 
 def setup_esrgan(root_dir):
@@ -179,10 +227,13 @@ def setup_esrgan(root_dir):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('dataset', default='all', help="Options: all, SoccerNet, Hockey")
-    
+
     args = parser.parse_args()
 
     root_dir = os.getcwd()
+
+    # Create main runtime env first (other setup steps depend on it)
+    setup_main_env(root_dir)
 
     # common for both datasets
     setup_sam(root_dir)
@@ -191,10 +242,15 @@ if __name__ == '__main__':
     download_models_common(root_dir)
     setup_str(root_dir)
 
-    #SoccerNet only
+    # SoccerNet only
     if not args.dataset == 'Hockey':
         setup_reid(root_dir)
         download_models(root_dir, 'SoccerNet')
+        copy_reid_models(root_dir)
+        os.makedirs(os.path.join(root_dir, 'out', 'SoccerNetResults'), exist_ok=True)
 
     if not args.dataset == 'SoccerNet':
         download_models(root_dir, 'Hockey')
+
+    # Remove macOS metadata files that can interfere with file listings
+    os.system('find . -name ".DS_Store" -type f -delete')

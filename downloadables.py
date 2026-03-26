@@ -3,14 +3,15 @@ import os
 import gdown
 import zipfile
 import sys
-import os
 
-mySNdl = SNdl(LocalDirectory="/content/jersey-number-pipeline/data")
-mySNdl.downloadDataTask(task="jersey-2023", split=["train","test","challenge"])
+# Use the directory containing this script as the project root so the script
+# works regardless of the current working directory (local or Colab).
+base_path = os.path.dirname(os.path.abspath(__file__))
+data_path = os.path.join(base_path, 'data')
+os.makedirs(data_path, exist_ok=True)
 
-
-# Define the base path
-base_path = '/content/jersey-number-pipeline'
+mySNdl = SNdl(LocalDirectory=data_path)
+mySNdl.downloadDataTask(task="jersey-2023", split=["train", "test", "challenge"])
 
 # --- Group 1: Models ---
 models_path = os.path.join(base_path, 'models')
@@ -27,30 +28,33 @@ models_files = [
 print(f"Downloading models to {models_path}...")
 for file_id, filename in models_files:
     output_file = os.path.join(models_path, filename)
+    if os.path.isfile(output_file):
+        print(f"Already present, skipping: {filename}")
+        continue
     url = f'https://drive.google.com/uc?id={file_id}'
     try:
-      gdown.download(url, output_file, quiet=False)
-    except:
-      print(f"Skipping {output_file}")
+        gdown.download(url, output_file, quiet=False)
+    except Exception as e:
+        print(f"Skipping {filename}: {e}")
 
 # --- Group 2: Data ---
-data_path = os.path.join(base_path, 'data')
-os.makedirs(data_path, exist_ok=True)
-
 data_files = [
     # (File ID, Output Filename)
     ('1_EA2lUBYx0TY-Ul0OJc7GTw1Y8kfLKvm', 'SoccerNetLegibility.zip'),
-    ('17A4HSSf7IcdrUcj9h_D_T3NEGfH2jUBm', 'soccer_lmdb.zip')
+    ('17A4HSSf7IcdrUcj9h_D_T3NEGfH2jUBm', 'soccer_lmdb.zip'),
 ]
 
 print(f"\nDownloading data to {data_path}...")
 for file_id, filename in data_files:
     output_file = os.path.join(data_path, filename)
+    if os.path.isfile(output_file):
+        print(f"Already present, skipping: {filename}")
+        continue
     url = f'https://drive.google.com/uc?id={file_id}'
     try:
-      gdown.download(url, output_file, quiet=False)
-    except:
-      print(f"Skipping {output_file}")
+        gdown.download(url, output_file, quiet=False)
+    except Exception as e:
+        print(f"Skipping {filename}: {e}")
 
 print("\nAll downloads complete.")
 
@@ -62,16 +66,27 @@ for item in os.listdir(data_path):
         with zipfile.ZipFile(file_name, 'r') as zip_ref:
             zip_ref.extractall(data_path)
 
-jersey_data_path = '/content/jersey-number-pipeline/data/jersey-2023'
-for item in os.listdir(jersey_data_path):
-  if item.endswith('.zip'):
-    file_name = os.path.join(jersey_data_path, item)
-    print(f"Unzipping {item}...")
-    with zipfile.ZipFile(file_name, 'r') as zip_ref:
-        zip_ref.extractall(jersey_data_path)
+jersey_data_path = os.path.join(data_path, 'jersey-2023')
+if os.path.isdir(jersey_data_path):
+    for item in os.listdir(jersey_data_path):
+        if item.endswith('.zip'):
+            file_name = os.path.join(jersey_data_path, item)
+            print(f"Unzipping {item}...")
+            with zipfile.ZipFile(file_name, 'r') as zip_ref:
+                zip_ref.extractall(jersey_data_path)
+
+    # Rename jersey-2023 -> SoccerNet (expected by the pipeline)
+    soccernet_path = os.path.join(data_path, 'SoccerNet')
+    if not os.path.isdir(soccernet_path):
+        os.rename(jersey_data_path, soccernet_path)
+        print(f"Renamed data/jersey-2023 -> data/SoccerNet")
+    else:
+        print("data/SoccerNet already exists, skipping rename.")
 
 print("Unzipping complete.")
 
-sys.path.insert(0, '/content/jersey-number-pipeline/reid/centroids-reid')
-# Add the directory containing the 'datasets' module to PYTHONPATH for the subprocess
-os.environ['PYTHONPATH'] = '/content/jersey-number-pipeline/reid/centroids-reid/' + ':' + os.environ.get('PYTHONPATH', '')
+sys.path.insert(0, os.path.join(base_path, 'reid', 'centroids-reid'))
+os.environ['PYTHONPATH'] = (
+    os.path.join(base_path, 'reid', 'centroids-reid')
+    + ':' + os.environ.get('PYTHONPATH', '')
+)
