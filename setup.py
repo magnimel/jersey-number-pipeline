@@ -8,6 +8,32 @@ import argparse
 
 ###### common setup utils ##############
 
+def is_valid_checkpoint(path, min_mb=10):
+    """Return False if the file is missing, too small, or starts with HTML/JSON (error page)."""
+    if not os.path.isfile(path):
+        return False
+    if os.path.getsize(path) < min_mb * 1024 * 1024:
+        return False
+    with open(path, 'rb') as f:
+        header = f.read(4)
+    return header[0:1] not in (b'<', b'{')
+
+
+def gdown_validated(url, save_path, label, min_mb=10):
+    """Download via gdown and validate; removes and warns if still corrupt after download."""
+    if os.path.isfile(save_path):
+        if is_valid_checkpoint(save_path, min_mb):
+            print(f"  OK (already present): {label}")
+            return
+        print(f"  CORRUPT — removing and re-downloading: {label}")
+        os.remove(save_path)
+    os.makedirs(os.path.dirname(save_path) or '.', exist_ok=True)
+    gdown.download(url, save_path, quiet=False)
+    if not is_valid_checkpoint(save_path, min_mb):
+        print(f"  WARNING: {label} still looks invalid after download (quota exceeded?)")
+        os.remove(save_path)
+
+
 def make_conda_env(env_name, libs=""):
     os.system(f"conda create -n {env_name} -y "+libs)
 
@@ -123,28 +149,20 @@ def setup_str(root):
     os.chdir(root)
 
 def download_models_common(root_dir):
-    repo_name = "ViTPose"
-    rep_path = "./pose"
-
-    url = cfg.dataset['SoccerNet']['pose_model_url']
-    models_folder_path = os.path.join(rep_path, repo_name, "checkpoints")
-    if not os.path.exists(models_folder_path):
-        os.makedirs(models_folder_path, exist_ok=True)
-    save_path = os.path.join(rep_path, "ViTPose", "checkpoints", "vitpose-h.pth")
-    if not os.path.isfile(save_path):
-        gdown.download(url, save_path)
+    os.chdir(root_dir)
+    save_path = os.path.join(root_dir, "pose", "ViTPose", "checkpoints", "vitpose-h.pth")
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    gdown_validated(cfg.dataset['SoccerNet']['pose_model_url'], save_path,
+                    "vitpose-h.pth", min_mb=100)
 
 def download_models(root_dir, dataset):
-    # download and save fine-tuned model
     save_path = os.path.join(root_dir, cfg.dataset[dataset]['str_model'])
-    if not os.path.isfile(save_path):
-        source_url = cfg.dataset[dataset]['str_model_url']
-        gdown.download(source_url, save_path)
+    gdown_validated(cfg.dataset[dataset]['str_model_url'], save_path,
+                    cfg.dataset[dataset]['str_model'], min_mb=10)
 
     save_path = os.path.join(root_dir, cfg.dataset[dataset]['legibility_model'])
-    if not os.path.isfile(save_path):
-        source_url = cfg.dataset[dataset]['legibility_model_url']
-        gdown.download(source_url, save_path)
+    gdown_validated(cfg.dataset[dataset]['legibility_model_url'], save_path,
+                    cfg.dataset[dataset]['legibility_model'], min_mb=5)
 
 def setup_sam(root_dir):
     os.chdir(root_dir)
@@ -210,13 +228,17 @@ def setup_esrgan(root_dir):
     os.makedirs(models_dir, exist_ok=True)
 
     weight_path = os.path.join(models_dir, 'RealESRGAN_x4plus.pth')
-    if not os.path.isfile(weight_path):
-        print("Downloading RealESRGAN_x4plus weights...")
-        url = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth"
+    url = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth"
+    if is_valid_checkpoint(weight_path, min_mb=60):
+        print(f"RealESRGAN weights already present at {weight_path}")
+    else:
+        if os.path.isfile(weight_path):
+            print("RealESRGAN weights corrupt — re-downloading...")
+            os.remove(weight_path)
+        else:
+            print("Downloading RealESRGAN_x4plus weights...")
         urllib.request.urlretrieve(url, weight_path)
         print(f"Saved to {weight_path}")
-    else:
-        print(f"RealESRGAN weights already present at {weight_path}")
 
     # Install the realesrgan Python package if not already available
     env_name = cfg.main_env
