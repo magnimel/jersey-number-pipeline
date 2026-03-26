@@ -92,6 +92,8 @@ def setup_pose(root):
         os.system(f"conda run --live-stream -n {env_name} pip install -v -e .")
         os.system(f"conda run --live-stream -n {env_name} pip install timm==0.4.9 einops tqdm")
 
+    os.chdir(root)  # always reset — prevents doubled path in download_models_common
+
 
 # clone and install str
 # download the model
@@ -111,8 +113,11 @@ def setup_str(root):
     if not env_name in get_conda_envs():
         make_conda_env(env_name, libs="python=3.9")
         os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip")
-        os.system(f"conda run --live-stream -n {env_name} pip install -r requirements/core.txt -e .[train,test]")
+        # Strip torch/torchvision from requirements.txt so we don't download the
+        # CPU build only to immediately replace it with the GPU build.
+        os.system("grep -Ev '^torch(vision)?==' requirements/core.txt > /tmp/req_no_torch.txt")
         os.system(f"conda run --live-stream -n {env_name} pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121")
+        os.system(f"conda run --live-stream -n {env_name} pip install -r /tmp/req_no_torch.txt -e .[train,test]")
         os.system(f"conda run --live-stream -n {env_name} pip install 'numpy<2'")
 
     os.chdir(root)
@@ -246,7 +251,8 @@ if __name__ == '__main__':
     if not args.dataset == 'Hockey':
         setup_reid(root_dir)
         download_models(root_dir, 'SoccerNet')
-        copy_reid_models(root_dir)
+        # NOTE: reid model copy (./models/ -> reid/centroids-reid/models/) is done
+        # at the end of downloadables.py, after the models are actually downloaded.
         os.makedirs(os.path.join(root_dir, 'out', 'SoccerNetResults'), exist_ok=True)
 
     if not args.dataset == 'SoccerNet':
