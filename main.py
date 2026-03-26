@@ -558,6 +558,7 @@ def soccer_net_pipeline(args):
                 scale=config.esrgan_scale,
                 tile=config.esrgan_tile,
                 half=config.esrgan_half,
+                batch_size=config.esrgan_batch_size,
                 intermediate_dir=getattr(args, 'esrgan_intermediate_dir', None),
             )
         except Exception as e:

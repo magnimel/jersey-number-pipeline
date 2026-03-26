@@ -25,6 +25,9 @@ esrgan_scale = 4
 esrgan_tile = 0
 # Use FP16 inference for speed on modern GPUs (Ampere / Turing and above).
 esrgan_half = False
+# Number of images processed per GPU forward pass. Jersey crops are small so
+# 16–32 is safe on most GPUs; set to 1 to match the old one-at-a-time behaviour.
+esrgan_batch_size = 16
 # ---------------------------------------------------------------------------
 
 

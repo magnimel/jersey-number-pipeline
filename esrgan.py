@@ -27,6 +27,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import torch
+import torch.nn.functional as F
 from tqdm import tqdm
 
 
@@ -157,8 +158,8 @@ def upscale_directory(
     tile_pad         : padding between tiles
     pre_pad          : padding added before processing
     half             : use FP16 inference (faster on modern GPUs)
-    batch_size       : images processed per GPU batch (kept for API compat;
-                       RealESRGANer processes one image at a time internally)
+    batch_size       : images processed per GPU forward pass; jersey crops are
+                       small so 16–32 is safe on most GPUs
     ext              : output extension – "auto" keeps the original extension
     overwrite        : skip images that already exist in output_dir
     intermediate_dir : if set, the raw numpy array returned by enhance() is
@@ -195,56 +196,147 @@ def upscale_directory(
     )
 
     def _save_intermediate(array: np.ndarray, stem: str) -> None:
-        """Save the raw numpy array from enhance() to intermediate_dir."""
         if intermediate_dir is None:
             return
-        npy_path = os.path.join(intermediate_dir, stem + ".npy")
-        np.save(npy_path, array)
+        np.save(os.path.join(intermediate_dir, stem + ".npy"), array)
 
-    success_count = 0
-    for filename in tqdm(image_files, desc="Real-ESRGAN upscaling"):
-        # Determine output filename
+    def _img_to_tensor(img: np.ndarray, half: bool, device: str):
+        """BGR uint8/uint16 → normalised float RGB tensor (1, C, H, W)."""
+        img = img.astype(np.float32)
+        max_range = 65535 if img.max() > 256 else 255
+        img = img / max_range
+        img = img[:, :, ::-1]  # BGR → RGB
+        t = torch.from_numpy(np.ascontiguousarray(img.transpose(2, 0, 1))).float()
+        if half:
+            t = t.half()
+        return t.unsqueeze(0).to(device), max_range
+
+    def _tensor_to_bgr(t: torch.Tensor, max_range: int) -> np.ndarray:
+        """(1, C, H, W) float tensor → BGR uint8/uint16."""
+        arr = t.squeeze(0).float().cpu().clamp_(0, 1).numpy()
+        arr = arr[[2, 1, 0], :, :].transpose(1, 2, 0)  # RGB CHW → BGR HWC
+        dtype = np.uint16 if max_range == 65535 else np.uint8
+        return (arr * max_range).round().astype(dtype)
+
+    def _run_batch(imgs_bgr: list, upsampler, scale: int, pre_pad: int, half: bool) -> list:
+        """
+        Run the ESRGAN model on a list of BGR images in a single forward pass.
+
+        Each image is independently pre-padded and mod-padded, then all are
+        zero-padded to the same spatial size so they can be stacked.  After
+        inference the per-image padding is removed before returning.
+        """
+        device = str(upsampler.device)
+        tensors, max_ranges, orig_hw, mod_pads = [], [], [], []
+
+        for img in imgs_bgr:
+            t, mr = _img_to_tensor(img, half, device)
+            # pre_pad
+            if pre_pad:
+                t = F.pad(t, (0, pre_pad, 0, pre_pad), "reflect")
+            # mod_pad so spatial dims are divisible by scale
+            _, _, h, w = t.shape
+            pad_h = (scale - h % scale) % scale
+            pad_w = (scale - w % scale) % scale
+            if pad_h or pad_w:
+                t = F.pad(t, (0, pad_w, 0, pad_h), "reflect")
+            tensors.append(t)
+            max_ranges.append(mr)
+            orig_hw.append((img.shape[0], img.shape[1]))
+            mod_pads.append((pad_h, pad_w))
+
+        # pad all tensors to the largest H and W in the batch
+        max_h = max(t.shape[2] for t in tensors)
+        max_w = max(t.shape[3] for t in tensors)
+        padded = []
+        for t in tensors:
+            ph = max_h - t.shape[2]
+            pw = max_w - t.shape[3]
+            padded.append(F.pad(t, (0, pw, 0, ph)) if (ph or pw) else t)
+
+        batch = torch.cat(padded, dim=0)  # (N, C, max_H, max_W)
+        with torch.no_grad():
+            out_batch = upsampler.model(batch)  # (N, C, max_H*scale, max_W*scale)
+
+        results = []
+        for i, (orig_h, orig_w) in enumerate(orig_hw):
+            out = out_batch[i : i + 1]
+            # remove mod_pad
+            ph, pw = mod_pads[i]
+            oh, ow = out.shape[2], out.shape[3]
+            out = out[:, :, : oh - ph * scale, : ow - pw * scale]
+            # remove pre_pad
+            if pre_pad:
+                oh, ow = out.shape[2], out.shape[3]
+                out = out[:, :, : oh - pre_pad * scale, : ow - pre_pad * scale]
+            results.append(_tensor_to_bgr(out, max_ranges[i]))
+        return results
+
+    # -----------------------------------------------------------------------
+    # Main loop — collect batches, run, save
+    # -----------------------------------------------------------------------
+    # Split file list into (filename, stem, out_path) skipping already-done
+    todo = []
+    skipped = 0
+    for filename in image_files:
         stem, orig_ext = os.path.splitext(filename)
         out_ext = orig_ext if ext == "auto" else ("." + ext.lstrip("."))
-        out_filename = stem + out_ext
-        out_path = os.path.join(output_dir, out_filename)
-
+        out_path = os.path.join(output_dir, stem + out_ext)
         if not overwrite and os.path.exists(out_path):
-            success_count += 1
+            skipped += 1
             continue
+        todo.append((filename, stem, out_path))
 
-        img_path = os.path.join(input_dir, filename)
-        img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
-        if img is None:
-            print(f"[ESRGAN] Warning: could not read {img_path}, skipping.")
-            continue
+    success_count = skipped
 
-        try:
-            # enhance() expects BGR (OpenCV format) and returns BGR
-            output, _ = upsampler.enhance(img, outscale=scale)
-            _save_intermediate(output, stem)  # save raw array before imwrite
-            cv2.imwrite(out_path, output)
-            success_count += 1
-        except RuntimeError as e:
-            # Fallback: CUDA OOM → retry on CPU with tiling
-            if "out of memory" in str(e).lower():
-                print(f"[ESRGAN] CUDA OOM on {filename}; retrying with tile=256 on CPU.")
-                torch.cuda.empty_cache()
-                cpu_upsampler = build_upsampler(
-                    model_path=model_path, scale=scale,
-                    tile=256, tile_pad=tile_pad,
-                    pre_pad=pre_pad, half=False,
-                    device="cpu",
-                )
-                try:
-                    output, _ = cpu_upsampler.enhance(img, outscale=scale)
-                    _save_intermediate(output, stem)  # save raw array before imwrite
-                    cv2.imwrite(out_path, output)
-                    success_count += 1
-                except Exception as e2:
-                    print(f"[ESRGAN] CPU fallback also failed for {filename}: {e2}")
+    def _process_batch(batch_items: list) -> int:
+        """Load, upscale and save one batch. Returns number of successes."""
+        loaded = []
+        for filename, stem, out_path in batch_items:
+            img = cv2.imread(os.path.join(input_dir, filename), cv2.IMREAD_UNCHANGED)
+            if img is None:
+                print(f"[ESRGAN] Warning: could not read {filename}, skipping.")
+                loaded.append(None)
             else:
-                print(f"[ESRGAN] Error processing {filename}: {e}")
+                loaded.append(img)
+
+        valid = [(item, img) for item, img in zip(batch_items, loaded) if img is not None]
+        if not valid:
+            return 0
+
+        items_v, imgs_v = zip(*valid)
+        try:
+            outputs = _run_batch(list(imgs_v), upsampler, scale, pre_pad, half)
+        except RuntimeError as e:
+            if "out of memory" not in str(e).lower():
+                print(f"[ESRGAN] Error on batch: {e}")
+                return 0
+            # CUDA OOM: fall back to CPU one-by-one with tiling
+            print(f"[ESRGAN] CUDA OOM on batch of {len(imgs_v)}; retrying one-by-one on CPU.")
+            torch.cuda.empty_cache()
+            cpu_up = build_upsampler(model_path=model_path, scale=scale,
+                                     tile=256, tile_pad=tile_pad,
+                                     pre_pad=pre_pad, half=False, device="cpu")
+            count = 0
+            for (_, stem, out_path), img in zip(items_v, imgs_v):
+                try:
+                    output, _ = cpu_up.enhance(img, outscale=scale)
+                    _save_intermediate(output, stem)
+                    cv2.imwrite(out_path, output)
+                    count += 1
+                except Exception as e2:
+                    print(f"[ESRGAN] CPU fallback failed for {stem}: {e2}")
+            return count
+
+        count = 0
+        for (_, stem, out_path), output in zip(items_v, outputs):
+            _save_intermediate(output, stem)
+            cv2.imwrite(out_path, output)
+            count += 1
+        return count
+
+    for i in tqdm(range(0, len(todo), batch_size), desc="Real-ESRGAN upscaling"):
+        success_count += _process_batch(todo[i : i + batch_size])
 
     print(f"[ESRGAN] Upscaled {success_count}/{len(image_files)} images → {output_dir}")
     return success_count
@@ -300,7 +392,7 @@ if __name__ == "__main__":
     parser.add_argument("--half", action="store_true",
                         help="Use FP16 inference (faster on modern GPUs)")
     parser.add_argument("--batch_size", type=int, default=1,
-                        help="Batch size hint (default: 1)")
+                        help="Images per GPU forward pass (default: 1)")
     parser.add_argument("--ext", default="auto",
                         help="Output extension, e.g. png; 'auto' keeps original")
     parser.add_argument("--overwrite", action="store_true",
