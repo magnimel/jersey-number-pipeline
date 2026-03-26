@@ -343,13 +343,58 @@ def test_model(model, subset, result_path=None):
     return epoch_acc
 
 
+def _calibrate_legibility_batch_size(model_ft, dataset, device, max_bs: int) -> int:
+    import time
+    if str(device) == 'cpu' or len(dataset) == 0:
+        return max_bs
+    n_sample = min(256, len(dataset))
+    sample_tensors = [dataset[i] for i in range(n_sample)]
+    candidates = [bs for bs in [8, 16, 32, 64, 128, 256, 512]
+                  if bs <= max_bs and bs <= n_sample]
+    if not candidates:
+        return max_bs
+
+    # warmup
+    try:
+        imgs = torch.stack(sample_tensors[:1]).to(device)
+        with torch.no_grad():
+            model_ft(imgs)
+        torch.cuda.synchronize()
+    except Exception:
+        pass
+
+    best_bs, best_rate = candidates[0], 0.0
+    n_trials = 3
+    print("[Legibility] Calibrating batch size ...")
+    for bs in candidates:
+        imgs = torch.stack((sample_tensors * ((bs // len(sample_tensors)) + 1))[:bs]).to(device)
+        try:
+            times = []
+            for _ in range(n_trials):
+                torch.cuda.synchronize()
+                t0 = time.perf_counter()
+                with torch.no_grad():
+                    model_ft(imgs)
+                torch.cuda.synchronize()
+                times.append(time.perf_counter() - t0)
+            rate = bs / sorted(times)[len(times) // 2]
+            print(f"  batch_size={bs:4d}  →  {rate:.1f} img/s  (trials: {[f'{t:.2f}s' for t in times]})")
+            if rate > best_rate:
+                best_rate, best_bs = rate, bs
+        except RuntimeError as e:
+            if "out of memory" in str(e).lower():
+                torch.cuda.empty_cache()
+                print(f"  batch_size={bs:4d}  →  OOM (skipping)")
+                break
+            raise
+    print(f"[Legibility] Selected batch_size={best_bs} ({best_rate:.1f} img/s)")
+    return best_bs
+
+
 # run inference on a list of files
 def run(image_paths, model_path, threshold=0.5, arch='resnet18', batch_size=512, num_workers=2):
     # setup data
     dataset = UnlabelledJerseyNumberLegibilityDataset(image_paths, arch=arch)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
-                                                  shuffle=False, num_workers=num_workers, 
-                                                  pin_memory=True if torch.cuda.is_available() else False)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     cudnn.benchmark = True
@@ -368,6 +413,11 @@ def run(image_paths, model_path, threshold=0.5, arch='resnet18', batch_size=512,
     model_ft.load_state_dict(state_dict)
     model_ft = model_ft.to(device)
     model_ft.eval()
+
+    batch_size = _calibrate_legibility_batch_size(model_ft, dataset, device, batch_size)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
+                                             shuffle=False, num_workers=num_workers,
+                                             pin_memory=torch.cuda.is_available())
 
     # run classifier
     results = []
@@ -439,6 +489,7 @@ def run_batch_tracklets(tracklet_dict, model_path, threshold=0.5, arch='resnet18
     
     # Process all images in batches
     dataset = UnlabelledJerseyNumberLegibilityDataset(all_images, arch=arch)
+    batch_size = _calibrate_legibility_batch_size(model_ft, dataset, device, batch_size)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
                                             shuffle=False, num_workers=num_workers,
                                             pin_memory=True if torch.cuda.is_available() else False)
