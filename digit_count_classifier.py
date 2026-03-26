@@ -15,7 +15,10 @@ import os
 import numpy as np
 from tqdm import tqdm
 
-from sam.sam import SAM
+try:
+    from sam.sam import SAM
+except ImportError:
+    SAM = None
 
 
 def train_model(model, dataloaders, dataset_sizes, criterion, optimizer, scheduler, device, num_epochs=25):
@@ -331,8 +334,8 @@ if __name__ == '__main__':
         val_dataset = DigitCountDataset(val_gt, val_img_dir, mode='val')
 
         dataloaders = {
-            'train': torch.utils.data.DataLoader(train_dataset, batch_size=4, shuffle=True, num_workers=4),
-            'val': torch.utils.data.DataLoader(val_dataset, batch_size=4, shuffle=False, num_workers=4)
+            'train': torch.utils.data.DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=2),
+            'val': torch.utils.data.DataLoader(val_dataset, batch_size=16, shuffle=False, num_workers=2)
         }
         dataset_sizes = {'train': len(train_dataset), 'val': len(val_dataset)}
 
@@ -348,6 +351,8 @@ if __name__ == '__main__':
         criterion = nn.BCELoss()
 
         if args.sam:
+            if SAM is None:
+                raise ImportError("SAM not available. Install sam package or train without --sam flag.")
             base_optimizer = torch.optim.SGD
             optimizer_ft = SAM(model_ft.parameters(), base_optimizer, lr=0.001, momentum=0.9)
             model_ft = train_model_with_sam(model_ft, dataloaders, dataset_sizes, criterion, optimizer_ft, device, num_epochs=10)
@@ -373,7 +378,7 @@ if __name__ == '__main__':
 
         test_dataset = DigitCountDataset(test_gt, test_img_dir, mode='test')
         dataloaders = {
-            'test': torch.utils.data.DataLoader(test_dataset, batch_size=4, shuffle=False, num_workers=4)
+            'test': torch.utils.data.DataLoader(test_dataset, batch_size=16, shuffle=False, num_workers=2)
         }
         dataset_sizes = {'test': len(test_dataset)}
 
