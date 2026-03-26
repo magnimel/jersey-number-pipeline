@@ -1,5 +1,6 @@
 import argparse
 import os
+import torch
 import legibility_classifier as lc
 import numpy as np
 import json
@@ -582,8 +583,9 @@ def soccer_net_pipeline(args):
                                      config.dataset['SoccerNet'][args.part]['crops_folder'])
             print(f"[STR] Using original crops from {image_dir}")
 
+        device = "cuda" if torch.cuda.is_available() else "cpu"
         command = f"conda run -n {config.str_env} --no-capture-output python3 str.py  {config.dataset['SoccerNet']['str_model']}\
-            --data_root={image_dir} --batch_size=1 --inference --result_file {str_result_file}"
+            --data_root={image_dir} --batch_size=512 --inference --result_file {str_result_file} --device {device}"
         success = os.system(command) == 0
         print("Done predict numbers")
 
