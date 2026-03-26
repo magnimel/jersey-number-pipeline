@@ -150,6 +150,9 @@ for fname in ['market1501_resnet50_256_128_epoch_120.ckpt',
         shutil.copy2(src, dst)
         print(f"  Copied {fname} -> {reid_dst}")
 
+# Remove macOS metadata files that break os.listdir() checks in the pipeline
+os.system('find . -name ".DS_Store" -type f -delete')
+
 print("\nDone.")
 
 sys.path.insert(0, os.path.join(base_path, 'reid', 'centroids-reid'))
