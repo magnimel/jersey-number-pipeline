@@ -289,6 +289,48 @@ def upscale_directory(
 
     success_count = skipped
 
+    # -----------------------------------------------------------------------
+    # Batch-size calibration: try candidate sizes on a small sample and pick
+    # the one with the highest throughput (images / second).
+    # -----------------------------------------------------------------------
+    def _calibrate(sample_imgs: list, max_bs: int) -> int:
+        candidates = [bs for bs in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
+                      if bs <= max_bs and bs <= len(sample_imgs)]
+        if not candidates:
+            return max_bs
+
+        import time
+
+        # Warmup — one small forward pass so CUDA kernels are compiled
+        try:
+            _run_batch(sample_imgs[:1], upsampler, scale, pre_pad, half)
+            torch.cuda.synchronize()
+        except Exception:
+            pass
+
+        best_bs, best_rate = candidates[0], 0.0
+        print("[ESRGAN] Calibrating batch size ...")
+        for bs in candidates:
+            imgs = (sample_imgs * ((bs // len(sample_imgs)) + 1))[:bs]
+            try:
+                torch.cuda.synchronize()
+                t0 = time.perf_counter()
+                _run_batch(imgs, upsampler, scale, pre_pad, half)
+                torch.cuda.synchronize()
+                elapsed = time.perf_counter() - t0
+                rate = bs / elapsed
+                print(f"  batch_size={bs:4d}  →  {rate:.1f} img/s")
+                if rate > best_rate:
+                    best_rate, best_bs = rate, bs
+            except RuntimeError as e:
+                if "out of memory" in str(e).lower():
+                    torch.cuda.empty_cache()
+                    print(f"  batch_size={bs:4d}  →  OOM (skipping)")
+                    break  # larger sizes will also OOM
+                raise
+        print(f"[ESRGAN] Selected batch_size={best_bs} ({best_rate:.1f} img/s)")
+        return best_bs
+
     def _load_valid(batch_items: list):
         """Read images from disk; returns (valid_items, valid_imgs)."""
         items_v, imgs_v = [], []
@@ -326,9 +368,17 @@ def upscale_directory(
                 print(f"[ESRGAN] CPU fallback failed for {stem}: {e}")
         return count
 
-    # Adaptive batch size: start at the configured value, halve on OOM,
-    # settle on the largest size that fits in VRAM for the rest of the run.
-    current_bs = batch_size
+    # Calibrate then run adaptively (halve on any unexpected OOM after calibration).
+    if todo and torch.cuda.is_available():
+        n_sample = min(256, len(todo))
+        sample_imgs = []
+        for filename, _, _ in todo[:n_sample]:
+            img = cv2.imread(os.path.join(input_dir, filename), cv2.IMREAD_UNCHANGED)
+            if img is not None:
+                sample_imgs.append(img)
+        current_bs = _calibrate(sample_imgs, batch_size) if sample_imgs else batch_size
+    else:
+        current_bs = batch_size
     i = 0
     pbar = tqdm(total=len(todo), desc="Real-ESRGAN upscaling")
     while i < len(todo):
