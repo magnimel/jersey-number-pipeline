@@ -233,13 +233,16 @@ def upscale_directory(
             t, mr = _img_to_tensor(img, half, device)
             # pre_pad
             if pre_pad:
-                t = F.pad(t, (0, pre_pad, 0, pre_pad), "reflect")
+                _, _, h, w = t.shape
+                mode = "reflect" if pre_pad < h and pre_pad < w else "constant"
+                t = F.pad(t, (0, pre_pad, 0, pre_pad), mode)
             # mod_pad so spatial dims are divisible by scale
             _, _, h, w = t.shape
             pad_h = (scale - h % scale) % scale
             pad_w = (scale - w % scale) % scale
             if pad_h or pad_w:
-                t = F.pad(t, (0, pad_w, 0, pad_h), "reflect")
+                mode = "reflect" if pad_h < h and pad_w < w else "constant"
+                t = F.pad(t, (0, pad_w, 0, pad_h), mode)
             tensors.append(t)
             max_ranges.append(mr)
             orig_hw.append((img.shape[0], img.shape[1]))
