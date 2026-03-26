@@ -289,45 +289,20 @@ def upscale_directory(
 
     success_count = skipped
 
-    def _process_batch(batch_items: list) -> int:
-        """Load, upscale and save one batch. Returns number of successes."""
-        loaded = []
-        for filename, stem, out_path in batch_items:
+    def _load_valid(batch_items: list):
+        """Read images from disk; returns (valid_items, valid_imgs)."""
+        items_v, imgs_v = [], []
+        for item in batch_items:
+            filename, stem, out_path = item
             img = cv2.imread(os.path.join(input_dir, filename), cv2.IMREAD_UNCHANGED)
             if img is None:
                 print(f"[ESRGAN] Warning: could not read {filename}, skipping.")
-                loaded.append(None)
             else:
-                loaded.append(img)
+                items_v.append(item)
+                imgs_v.append(img)
+        return items_v, imgs_v
 
-        valid = [(item, img) for item, img in zip(batch_items, loaded) if img is not None]
-        if not valid:
-            return 0
-
-        items_v, imgs_v = zip(*valid)
-        try:
-            outputs = _run_batch(list(imgs_v), upsampler, scale, pre_pad, half)
-        except RuntimeError as e:
-            if "out of memory" not in str(e).lower():
-                print(f"[ESRGAN] Error on batch: {e}")
-                return 0
-            # CUDA OOM: fall back to CPU one-by-one with tiling
-            print(f"[ESRGAN] CUDA OOM on batch of {len(imgs_v)}; retrying one-by-one on CPU.")
-            torch.cuda.empty_cache()
-            cpu_up = build_upsampler(model_path=model_path, scale=scale,
-                                     tile=256, tile_pad=tile_pad,
-                                     pre_pad=pre_pad, half=False, device="cpu")
-            count = 0
-            for (_, stem, out_path), img in zip(items_v, imgs_v):
-                try:
-                    output, _ = cpu_up.enhance(img, outscale=scale)
-                    _save_intermediate(output, stem)
-                    cv2.imwrite(out_path, output)
-                    count += 1
-                except Exception as e2:
-                    print(f"[ESRGAN] CPU fallback failed for {stem}: {e2}")
-            return count
-
+    def _save_outputs(items_v, outputs):
         count = 0
         for (_, stem, out_path), output in zip(items_v, outputs):
             _save_intermediate(output, stem)
@@ -335,8 +310,57 @@ def upscale_directory(
             count += 1
         return count
 
-    for i in tqdm(range(0, len(todo), batch_size), desc="Real-ESRGAN upscaling"):
-        success_count += _process_batch(todo[i : i + batch_size])
+    def _cpu_fallback(items_v, imgs_v) -> int:
+        print(f"[ESRGAN] Falling back to CPU one-by-one for {len(imgs_v)} images.")
+        cpu_up = build_upsampler(model_path=model_path, scale=scale,
+                                 tile=256, tile_pad=tile_pad,
+                                 pre_pad=pre_pad, half=False, device="cpu")
+        count = 0
+        for (_, stem, out_path), img in zip(items_v, imgs_v):
+            try:
+                output, _ = cpu_up.enhance(img, outscale=scale)
+                _save_intermediate(output, stem)
+                cv2.imwrite(out_path, output)
+                count += 1
+            except Exception as e:
+                print(f"[ESRGAN] CPU fallback failed for {stem}: {e}")
+        return count
+
+    # Adaptive batch size: start at the configured value, halve on OOM,
+    # settle on the largest size that fits in VRAM for the rest of the run.
+    current_bs = batch_size
+    i = 0
+    pbar = tqdm(total=len(todo), desc="Real-ESRGAN upscaling")
+    while i < len(todo):
+        batch_items = todo[i : i + current_bs]
+        items_v, imgs_v = _load_valid(batch_items)
+        if not items_v:
+            i += len(batch_items)
+            pbar.update(len(batch_items))
+            continue
+        try:
+            outputs = _run_batch(imgs_v, upsampler, scale, pre_pad, half)
+            success_count += _save_outputs(items_v, outputs)
+            i += len(batch_items)
+            pbar.update(len(batch_items))
+        except RuntimeError as e:
+            if "out of memory" not in str(e).lower():
+                print(f"[ESRGAN] Error on batch: {e}")
+                i += len(batch_items)
+                pbar.update(len(batch_items))
+                continue
+            torch.cuda.empty_cache()
+            new_bs = current_bs // 2
+            if new_bs == 0:
+                # Can't go lower — give up on GPU and use CPU
+                success_count += _cpu_fallback(items_v, imgs_v)
+                i += len(batch_items)
+                pbar.update(len(batch_items))
+            else:
+                print(f"[ESRGAN] CUDA OOM at batch_size={current_bs}; retrying with {new_bs}.")
+                current_bs = new_bs
+                # don't advance i — retry the same items with a smaller batch
+    pbar.close()
 
     print(f"[ESRGAN] Upscaled {success_count}/{len(image_files)} images → {output_dir}")
     return success_count
