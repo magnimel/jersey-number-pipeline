@@ -100,6 +100,52 @@ def generate_features_old(input_folder, output_folder, model_version='res50_mark
             np.save(f, np_feat)
 
 
+def _calibrate_reid_batch_size(model, sample_tensors: list, use_cuda: bool, max_bs: int) -> int:
+    import time
+    if not use_cuda or len(sample_tensors) == 0:
+        return max_bs
+    candidates = [bs for bs in [8, 16, 32, 64, 128, 256, 512]
+                  if bs <= max_bs and bs <= len(sample_tensors)]
+    if not candidates:
+        return max_bs
+
+    # warmup
+    try:
+        imgs = torch.stack(sample_tensors[:1]).cuda()
+        with torch.no_grad():
+            model.backbone(imgs)
+        torch.cuda.synchronize()
+    except Exception:
+        pass
+
+    best_bs, best_rate = candidates[0], 0.0
+    n_trials = 3
+    print("[REID] Calibrating batch size ...")
+    for bs in candidates:
+        imgs = torch.stack((sample_tensors * ((bs // len(sample_tensors)) + 1))[:bs]).cuda()
+        try:
+            times = []
+            for _ in range(n_trials):
+                torch.cuda.synchronize()
+                t0 = time.perf_counter()
+                with torch.no_grad():
+                    model.backbone(imgs)
+                torch.cuda.synchronize()
+                times.append(time.perf_counter() - t0)
+            rate = bs / sorted(times)[len(times) // 2]
+            print(f"  batch_size={bs:4d}  →  {rate:.1f} img/s  (trials: {[f'{t:.2f}s' for t in times]})")
+            if rate > best_rate:
+                best_rate, best_bs = rate, bs
+        except RuntimeError as e:
+            if "out of memory" in str(e).lower():
+                torch.cuda.empty_cache()
+                print(f"  batch_size={bs:4d}  →  OOM (skipping)")
+                break
+            raise
+    print(f"[REID] Selected batch_size={best_bs} ({best_rate:.1f} img/s)")
+    return best_bs
+
+
 def generate_features(input_folder, output_folder, model_version='res50_market', batch_size=64, num_workers=2, subset_images=None):
     """
     Optimized batch processing version of feature generation.
@@ -149,6 +195,10 @@ def generate_features(input_folder, output_folder, model_version='res50_market',
     
     # Create dataset and dataloader
     dataset = TrackletDataset(tracklet_paths, val_transforms)
+    if use_cuda and len(dataset) > 0:
+        n_sample = min(256, len(dataset))
+        sample_tensors = [dataset[i][1] for i in range(n_sample)]
+        batch_size = _calibrate_reid_batch_size(model, sample_tensors, use_cuda, batch_size)
     dataloader = DataLoader(
         dataset,
         batch_size=batch_size,

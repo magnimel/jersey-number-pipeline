@@ -230,6 +230,62 @@ def run_dataloader_inference(pose_model, dataloader, total, device,
     return total_written
 
 
+def _calibrate_pose_batch_size(pose_model, pose_dataset, device, use_fp16: bool, max_bs: int) -> int:
+    import time
+    if str(device) == 'cpu' or len(pose_dataset) == 0:
+        return max_bs
+    n_sample = min(256, len(pose_dataset))
+    sample_items = [pose_dataset[i] for i in range(n_sample)]
+    candidates = [bs for bs in [8, 16, 32, 64, 128, 256, 512]
+                  if bs <= max_bs and bs <= n_sample]
+    if not candidates:
+        return max_bs
+
+    def _run_batch(items):
+        batch = pose_collate_fn(items)
+        imgs = batch['img'].to(device, non_blocking=True)
+        img_metas = batch['img_metas']
+        with torch.no_grad():
+            if use_fp16:
+                with torch.cuda.amp.autocast():
+                    pose_model(img=imgs, img_metas=img_metas, return_loss=False, return_heatmap=False)
+            else:
+                pose_model(img=imgs, img_metas=img_metas, return_loss=False, return_heatmap=False)
+
+    # warmup
+    try:
+        _run_batch(sample_items[:1])
+        torch.cuda.synchronize()
+    except Exception:
+        pass
+
+    best_bs, best_rate = candidates[0], 0.0
+    n_trials = 3
+    print("[Pose] Calibrating batch size ...")
+    for bs in candidates:
+        items = (sample_items * ((bs // len(sample_items)) + 1))[:bs]
+        try:
+            times = []
+            for _ in range(n_trials):
+                torch.cuda.synchronize()
+                t0 = time.perf_counter()
+                _run_batch(items)
+                torch.cuda.synchronize()
+                times.append(time.perf_counter() - t0)
+            rate = bs / sorted(times)[len(times) // 2]
+            print(f"  batch_size={bs:4d}  →  {rate:.1f} img/s  (trials: {[f'{t:.2f}s' for t in times]})")
+            if rate > best_rate:
+                best_rate, best_bs = rate, bs
+        except RuntimeError as e:
+            if "out of memory" in str(e).lower():
+                torch.cuda.empty_cache()
+                print(f"  batch_size={bs:4d}  →  OOM (skipping)")
+                break
+            raise
+    print(f"[Pose] Selected batch_size={best_bs} ({best_rate:.1f} img/s)")
+    return best_bs
+
+
 def main():
     """Run batched pose estimation on images with bounding box annotations."""
     parser = ArgumentParser()
@@ -300,6 +356,11 @@ def main():
         cfg, coco, args.img_root, dataset_name, flip_pairs, pipeline)
 
     total = len(pose_dataset)
+
+    if torch.cuda.is_available():
+        args.batch_size = _calibrate_pose_batch_size(
+            pose_model, pose_dataset, device, args.fp16, args.batch_size)
+
     print(f"Processing {total} images "
           f"(batch_size={args.batch_size}, workers={args.num_workers}, "
           f"fp16={args.fp16})...")
