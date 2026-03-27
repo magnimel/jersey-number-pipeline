@@ -1,3 +1,10 @@
+# Aggregation module - data, checkpoints, secrets (download/create separately)
+aggregation/data/
+aggregation/checkpoints/
+aggregation/logs/
+aggregation/.env
+wandb/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
