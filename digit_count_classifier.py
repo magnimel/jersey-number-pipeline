@@ -320,6 +320,7 @@ if __name__ == '__main__':
     parser.add_argument('--data', help='SoccerNet root dir (contains train/val/test with gt JSONs and images)')
     parser.add_argument('--trained_model_path', help='trained model to use for testing or to load for finetuning')
     parser.add_argument('--new_trained_model_path', help='path to save newly trained model')
+    parser.add_argument('--sample_fraction', type=float, default=0.1, help='fraction of data to use (default 0.1 = 10%%)')
 
     args = parser.parse_args()
 
@@ -330,8 +331,8 @@ if __name__ == '__main__':
         val_gt = os.path.join(args.data, 'val', 'val_gt.json')
         val_img_dir = os.path.join(args.data, 'val', 'images')
 
-        train_dataset = DigitCountDataset(train_gt, train_img_dir, mode='train', isBalanced=True)
-        val_dataset = DigitCountDataset(val_gt, val_img_dir, mode='val')
+        train_dataset = DigitCountDataset(train_gt, train_img_dir, mode='train', isBalanced=True, sample_fraction=args.sample_fraction)
+        val_dataset = DigitCountDataset(val_gt, val_img_dir, mode='val', sample_fraction=args.sample_fraction)
 
         dataloaders = {
             'train': torch.utils.data.DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=2),

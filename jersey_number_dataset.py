@@ -163,7 +163,7 @@ class DigitCountDataset(Dataset):
     Reads ground truth JSON (tracklet_id -> jersey_number) and walks tracklet
     image folders. Label: 0 = 1-digit (0-9), 1 = 2-digit (10-99).
     """
-    def __init__(self, gt_file, img_dir, mode='train', isBalanced=False, arch='resnet34'):
+    def __init__(self, gt_file, img_dir, mode='train', isBalanced=False, arch='resnet34', sample_fraction=1.0):
         if 'resnet' in arch:
             arch = 'resnet'
         self.transform = data_transforms[mode][arch]
@@ -202,6 +202,16 @@ class DigitCountDataset(Dataset):
             self.labels = [self.labels[i] for i in keep]
             self.img_names = [self.img_names[i] for i in keep]
             print(f"Balanced to {min_count} per class, total={len(self.labels)}")
+
+        if sample_fraction < 1.0:
+            n_keep = max(1, int(len(self.labels) * sample_fraction))
+            indices = list(range(len(self.labels)))
+            np.random.shuffle(indices)
+            indices = indices[:n_keep]
+            self.image_paths = [self.image_paths[i] for i in indices]
+            self.labels = [self.labels[i] for i in indices]
+            self.img_names = [self.img_names[i] for i in indices]
+            print(f"Sampled {sample_fraction*100:.0f}%: using {len(self.labels)} samples")
 
     def __len__(self):
         return len(self.labels)
