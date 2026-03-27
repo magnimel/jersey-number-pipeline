@@ -16,12 +16,15 @@
 #SBATCH --output=aggregation/logs/manual-%j/out.log
 #SBATCH --error=aggregation/logs/manual-%j/err.log
 
+set -euo pipefail
+
 # ---------------------------------------------------------------------------
-# Paths - adjust these to match your scratch layout
+# Paths
 # ---------------------------------------------------------------------------
-REPO_DIR="${HOME}/jersey-number-pipeline"
-VENV_DIR="${SCRATCH}/envs/jersey-aggregation"
-DATA_DIR="${SCRATCH}/jersey-agg-data"       # where you extracted the train data zip
+REPO_SRC="${HOME}/jersey-number-pipeline"
+REPO_DIR="${SLURM_TMPDIR}/repo"
+
+DATA_DIR="${SCRATCH}/jersey-agg-data"
 OUTPUT_DIR="${HP_OUTPUT_DIR:-${SCRATCH}/jersey-agg-checkpoints}"
 WANDB_OFFLINE_DIR="${SCRATCH}/jersey-agg-wandb"
 
@@ -31,18 +34,35 @@ TEST_STR_RESULTS="${DATA_DIR}/jersey_id_results_test.json"
 TEST_GT_FILE="${DATA_DIR}/test_gt.json"
 
 # ---------------------------------------------------------------------------
-# Environment
+# 1. Copy the repo to local scratch for fast I/O
 # ---------------------------------------------------------------------------
-# Must match what was used in setup_narval.sh so the GPU torch wheel is found
+echo "Rsyncing repo to ${REPO_DIR} ..."
+rsync -a --delete \
+    --exclude='.git/' \
+    --exclude='aggregation/.venv/' \
+    --exclude='aggregation/logs/' \
+    --exclude='__pycache__/' \
+    --exclude='*.pyc' \
+    "${REPO_SRC}/" "${REPO_DIR}/"
+
+# ---------------------------------------------------------------------------
+# 2. Build a per-job venv in local scratch from the pre-populated wheel cache
+# ---------------------------------------------------------------------------
 module load gcc/12.3 cuda/12.2 python/3.11
 
-source "${VENV_DIR}/bin/activate"
+echo "Creating venv in local scratch ..."
+cd "${REPO_DIR}/aggregation"
+UV_CACHE_DIR="${SCRATCH}/jersey-agg-uv-cache" uv sync --frozen --offline --python python3.11
 
-mkdir -p "${OUTPUT_DIR}" "${WANDB_OFFLINE_DIR}" "${REPO_DIR}/aggregation/logs"
+source "${REPO_DIR}/aggregation/.venv/bin/activate"
+
+# ---------------------------------------------------------------------------
+# 3. Environment setup
+# ---------------------------------------------------------------------------
+mkdir -p "${OUTPUT_DIR}" "${WANDB_OFFLINE_DIR}"
 
 # Load W&B secrets from .env (API key, entity, project)
-# aggregation/.env is gitignored; place it manually in the repo before submitting
-if [ -f "${REPO_DIR}/aggregation/.env" ]; then
+if [[ -f "${REPO_DIR}/aggregation/.env" ]]; then
     set -a
     source "${REPO_DIR}/aggregation/.env"
     set +a
@@ -53,16 +73,15 @@ export WANDB_MODE=offline
 export WANDB_DIR="${WANDB_OFFLINE_DIR}"
 
 # ---------------------------------------------------------------------------
-# Hyperparameters - set by sweep_narval.sh via --export; fall back to defaults
-# for manual single-run submissions.
+# 4. Hyperparameters (set by sweep_narval.sh via --export; defaults for manual runs)
 # ---------------------------------------------------------------------------
 HP_LR="${HP_LR:-1e-3}"
 HP_BS="${HP_BS:-64}"
 HP_WD="${HP_WD:-1e-4}"
 HP_EPOCHS="${HP_EPOCHS:-50}"
 HP_PATIENCE="${HP_PATIENCE:-10}"
-HP_CW="${HP_CW:-true}"           # use_class_weights
-HP_P2D="${HP_P2D:-false}"        # use_digit_classifier
+HP_CW="${HP_CW:-true}"
+HP_P2D="${HP_P2D:-false}"
 HP_RUN_NAME="${HP_RUN_NAME:-agg_lr${HP_LR}_bs${HP_BS}_wd${HP_WD}_ep${HP_EPOCHS}}"
 
 echo "Hyperparameters:"
@@ -71,11 +90,11 @@ echo "  epochs=${HP_EPOCHS}  use_class_weights=${HP_CW}  use_digit_classifier=${
 echo "  run_name=${HP_RUN_NAME}"
 
 # ---------------------------------------------------------------------------
-# Run  (Hydra overrides)
+# 5. Train
 # ---------------------------------------------------------------------------
 cd "${REPO_DIR}"
 
-python aggregation/train.py \
+python -u aggregation/train.py \
     data.str_results="${STR_RESULTS}" \
     data.gt="${GT_FILE}" \
     data.test_str_results="${TEST_STR_RESULTS}" \
@@ -92,7 +111,7 @@ python aggregation/train.py \
 
 echo ""
 echo "Job done. Sync W&B offline run with:"
-echo "  wandb sync ${WANDB_OFFLINE_DIR}/wandb/offline-run-*"
+echo "  wandb sync ${WANDB_OFFLINE_DIR}/wandb/offline-run-*/"
 echo ""
 echo "Update configuration.py with the best checkpoint path from:"
 echo "  cat ${OUTPUT_DIR}/best_ckpt.txt"

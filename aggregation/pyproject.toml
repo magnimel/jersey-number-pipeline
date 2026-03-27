@@ -1,0 +1,19 @@
+[project]
+name = "jersey-aggregation"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "torch",
+    "pytorch-lightning",
+    "torchmetrics",
+    "scikit-learn",
+    "numpy",
+    "tqdm",
+    "wandb",
+    "python-dotenv",
+    "hydra-core",
+]
+
+[tool.uv]
+# No source distribution to install - only the dependencies above are managed.
+package = false
