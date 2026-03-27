@@ -198,6 +198,8 @@ def setup_main_env(root_dir):
         "'setuptools<70.0.0'",
         "realesrgan basicsr",
         "pandas==2.2.3 tqdm==4.66.5 scipy==1.13.1 SoccerNet gdown",
+        # aggregation module dependencies (runs in this env via main.py)
+        "scikit-learn python-dotenv hydra-core",
     ]
     for pkg in pkgs:
         os.system(f"conda run --live-stream -n {env_name} pip install {pkg}")
