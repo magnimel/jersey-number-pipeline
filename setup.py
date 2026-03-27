@@ -139,9 +139,9 @@ def setup_str(root):
     if not env_name in get_conda_envs():
         make_conda_env(env_name, libs="python=3.9")
         os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip")
-        # Strip torch/torchvision from requirements.txt so we don't download the
-        # CPU build only to immediately replace it with the GPU build.
-        os.system("grep -Ev '^torch(vision)?==' requirements/core.txt > /tmp/req_no_torch.txt")
+        # Strip torch/torchvision and the cpu-only index URL from requirements so
+        # we don't pull in the CPU build when installing other packages.
+        os.system("grep -Ev '^torch(vision)?==|--extra-index-url.*cpu' requirements/core.txt > /tmp/req_no_torch.txt")
         os.system(f"conda run --live-stream -n {env_name} pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121")
         os.system(f"conda run --live-stream -n {env_name} pip install -r /tmp/req_no_torch.txt -e .[train,test]")
         os.system(f"conda run --live-stream -n {env_name} pip install 'numpy<2'")
