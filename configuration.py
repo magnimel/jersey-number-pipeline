@@ -110,6 +110,9 @@ dataset = {'SoccerNet':
                  'legibility_model_url':  "https://drive.google.com/uc?id=1QDAqZvIbf0UPP9disdBsqcdIB0e84ZWa",
                  'pose_model_url': 'https://drive.google.com/uc?id=1gHOcfVvmwVDuJsn9c-a-v39vIqFpfbH0',
                  'str_model': 'models/parseq_epoch=24-step=2575-val_accuracy=95.6044-val_NED=96.3255.ckpt',
+                 # Path to a trained TrackletAggregator checkpoint; set after training.
+                 # Leave as None to use the default heuristic voting stage.
+                 'aggregation_model': None,
                  'esrgan_model': 'models/RealESRGAN_x4plus.pth',
 
                  #'str_model': 'pretrained=parseq',

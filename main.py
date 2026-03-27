@@ -593,10 +593,19 @@ def soccer_net_pipeline(args):
     if args.pipeline['combine'] and success:
         #8. combine tracklet results
         analysis_results = None
-        #read predicted results, stack unique predictions, sum confidence scores for each, choose argmax
-        results_dict, analysis_results = helpers.process_jersey_id_predictions(str_result_file, useBias=True)
-        #results_dict, analysis_results = helpers.process_jersey_id_predictions_raw(str_result_file, useTS=True)
-        #results_dict, analysis_results = helpers.process_jersey_id_predictions_bayesian(str_result_file, useTS=True, useBias=True, useTh=True)
+
+        agg_ckpt = getattr(args, 'aggregation_model', None) or config.dataset['SoccerNet'].get('aggregation_model')
+        if args.pipeline.get('aggregation') and agg_ckpt and os.path.exists(agg_ckpt):
+            # 8a. Use trained BiLSTM aggregation model
+            print(f"[Aggregation] Running TrackletAggregator from {agg_ckpt}")
+            from aggregation.evaluate import load_model as _load_agg, run_inference_no_gt as _agg_infer
+            _device = "cuda" if torch.cuda.is_available() else "cpu"
+            _agg_model, _use_p2 = _load_agg(agg_ckpt, _device)
+            results_dict = _agg_infer(_agg_model, str_result_file, _device, _use_p2, batch_size=256)
+            print(f"[Aggregation] Predicted {len(results_dict)} tracklets")
+        else:
+            # 8b. Fallback: heuristic voting
+            results_dict, analysis_results = helpers.process_jersey_id_predictions(str_result_file, useBias=True)
 
         # add illegible tracklet predictions
         consolidated_dict = consolidated_results(image_dir, results_dict, illegible_path, soccer_ball_list=soccer_ball_list)
@@ -631,6 +640,9 @@ if __name__ == '__main__':
                              "Useful for debugging or lossless downstream processing.")
     parser.add_argument('--subset', default=None,
                         help="Path to a JSON file listing image paths to process (for testing on a subset)")
+    parser.add_argument('--aggregation_model', default=None,
+                        help="Path to a TrackletAggregator checkpoint (.pt). "
+                             "If provided, replaces the heuristic voting stage with the BiLSTM model.")
     args = parser.parse_args()
 
     # --esrgan_intermediate_dir implies --esrgan
@@ -662,6 +674,7 @@ if __name__ == '__main__':
                            "esrgan": args.esrgan,
                            "str": True,
                            "combine": True,
+                           "aggregation": args.aggregation_model is not None,
                            "eval": True}
             # When resuming, only run esrgan if the flag was passed and the stage hasn't completed
             if args.resume:
