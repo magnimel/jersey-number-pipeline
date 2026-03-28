@@ -1,0 +1,18 @@
+[project]
+name = "jersey-digit-classifier"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "torch",
+    "torchvision",
+    "movinets",
+    "pytorch-lightning",
+    "wandb",
+    "python-dotenv",
+    "scikit-learn",
+    "Pillow",
+    "numpy",
+]
+
+[tool.uv]
+package = false
