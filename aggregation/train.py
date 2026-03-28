@@ -10,8 +10,6 @@ Usage (from repo root):
     python aggregation/train.py training.lr=5e-4 training.epochs=50
 
 W&B credentials are loaded from aggregation/.env (copy from aggregation/.env.template).
-On Narval, WANDB_MODE=offline is set by the SLURM script; sync after the job with:
-    wandb sync $SCRATCH/jersey-agg-wandb/wandb/offline-run-*/
 """
 
 import os
@@ -111,7 +109,7 @@ class TrackletDataModule(pl.LightningDataModule):
 class TrackletAggregatorLit(pl.LightningModule):
     def __init__(self, cfg: DictConfig, class_weights=None):
         super().__init__()
-        self.save_hyperparameters(ignore=["class_weights"])
+        self.save_hyperparameters(ignore=["class_weights", "cfg"])
         self.cfg = cfg
         self.model = TrackletAggregator(use_digit_classifier=cfg.model.use_digit_classifier)
 
@@ -163,7 +161,6 @@ class TrackletAggregatorLit(pl.LightningModule):
 @hydra.main(config_path="conf", config_name="config", version_base=None)
 def main(cfg: DictConfig):
     pl.seed_everything(cfg.training.seed, workers=True)
-    os.makedirs(cfg.output.output_dir, exist_ok=True)
 
     # Data
     dm = TrackletDataModule(cfg)
@@ -183,26 +180,37 @@ def main(cfg: DictConfig):
     print(f"Parameters: {lit_model.model.num_parameters():,}")
     print(f"use_digit_classifier: {cfg.model.use_digit_classifier}")
 
-    # Logger
+    # Logger — init first so we can use the W&B run name for the output dir
     wandb_logger = None
+    t = cfg.training
+    run_name = (
+        cfg.output.run_name
+        or f"agg_bs{t.batch_size}_lr{t.lr:.1e}_wd{t.weight_decay:.1e}_cw{'T' if t.use_class_weights else 'F'}"
+    )
     if cfg.wandb.enabled:
         try:
             entity = cfg.wandb.entity or os.environ.get("WANDB_ENTITY")
             wandb_logger = WandbLogger(
                 project=cfg.wandb.project,
                 entity=entity,
-                name=cfg.output.run_name,
+                name=run_name,
                 log_model=False,
                 config=OmegaConf.to_container(cfg, resolve=True),
             )
+            run_name = wandb_logger.experiment.name
         except Exception as e:
             print(f"[W&B] Failed to initialise: {e}. Continuing without logging.")
 
+    # Per-run output dir named after the W&B run
+    output_dir = os.path.join(cfg.output.output_dir, run_name or "unnamed")
+    os.makedirs(output_dir, exist_ok=True)
+    print(f"Output dir: {output_dir}")
+
     # Callbacks
-    ckpt_filename = (cfg.output.run_name or "agg") + "_epoch{epoch:03d}_valacc{val/acc:.4f}"
+    ckpt_filename = "epoch{epoch:03d}_valacc{val/acc:.4f}"
     callbacks = [
         ModelCheckpoint(
-            dirpath=cfg.output.output_dir,
+            dirpath=output_dir,
             filename=ckpt_filename,
             monitor="val/acc",
             mode="max",
@@ -236,17 +244,14 @@ def main(cfg: DictConfig):
     print(f"\nTraining done. Best val_acc={best_val_acc:.4f}")
     print(f"Best checkpoint: {best_ckpt}")
 
-    with open(os.path.join(cfg.output.output_dir, "best_ckpt.txt"), "w") as f:
+    with open(os.path.join(output_dir, "best_ckpt.txt"), "w") as f:
         f.write(best_ckpt + "\n")
     print(f"Update configuration.py: dataset['SoccerNet']['aggregation_model'] = '{best_ckpt}'")
 
     # Test set evaluation using the best checkpoint
     if dm.test_dataset is not None:
         print("\nEvaluating best checkpoint on test set...")
-        best_model = TrackletAggregatorLit.load_from_checkpoint(
-            best_ckpt, cfg=cfg, class_weights=class_weights
-        )
-        trainer.test(best_model, datamodule=dm)
+        trainer.test(lit_model, datamodule=dm, ckpt_path=best_ckpt)
 
 
 if __name__ == "__main__":

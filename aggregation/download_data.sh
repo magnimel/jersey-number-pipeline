@@ -1,36 +1,46 @@
 #!/bin/bash
-# Download the SoccerNet training pipeline outputs from Google Drive.
-# Run this on a LOGIN node (has internet) or locally before rsyncing to Narval.
+# Download pre-computed SoccerNet pipeline outputs (PARSeq STR results) for
+# aggregation model training/evaluation.
 #
-# The zip contains:
-#   jersey_id_results_train.json  - PARSeq logits per crop
-#   train_gt.json                 - tracklet -> jersey number ground truth
+# The zips contain:
+#   train_all_run.zip  -> jersey_id_results_train.json  (PARSeq logits per crop)
+#   test_all_run.zip   -> jersey_id_results_test.json   (PARSeq logits per crop)
+#
+# Ground-truth files (train_gt.json / test_gt.json) come from the SoccerNet
+# dataset splits downloaded by downloadables.py (train.zip / test.zip).
 #
 # Usage:
 #   bash aggregation/download_data.sh [destination_dir]
 #
-# Default destination: $SCRATCH/jersey-agg-data  (matches submit_narval.sh)
+# Default destination: data/aggregation/
 
 set -e
 
-DEST="${1:-${SCRATCH}/jersey-agg-data}"
-FILE_ID="1bGPqNxN6G01tc8kunlXlk9ZNqhewugIK"
-ZIP_PATH="${DEST}/train_pipeline_output.zip"
+DEST="${1:-data/aggregation}"
+TRAIN_ID="1bGPqNxN6G01tc8kunlXlk9ZNqhewugIK"
+TEST_ID="1yzuJaTx4m7rLW3c2inuudF7BGN6rmhNi"
 
 mkdir -p "${DEST}"
 
-echo "Downloading to ${DEST} ..."
+download() {
+    local file_id="$1"
+    local zip_path="$2"
+    local label="$3"
 
-# Try gdown first (pip install gdown), fall back to curl
-if command -v gdown &>/dev/null; then
-    gdown "https://drive.google.com/uc?id=${FILE_ID}" -O "${ZIP_PATH}"
-else
-    echo "gdown not found; trying curl (may fail for large Drive files without auth)..."
-    curl -L "https://drive.google.com/uc?export=download&id=${FILE_ID}" -o "${ZIP_PATH}"
-fi
+    echo "Downloading ${label} ..."
+    if command -v gdown &>/dev/null; then
+        gdown "https://drive.google.com/uc?id=${file_id}" -O "${zip_path}"
+    else
+        echo "gdown not found; install it with: pip install gdown"
+        exit 1
+    fi
 
-echo "Extracting..."
-unzip -o "${ZIP_PATH}" -d "${DEST}"
+    echo "Extracting ${label} ..."
+    unzip -o "${zip_path}" -d "${DEST}"
+}
+
+download "${TRAIN_ID}" "${DEST}/train_all_run.zip" "train_all_run.zip"
+download "${TEST_ID}"  "${DEST}/test_all_run.zip"  "test_all_run.zip"
 
 echo ""
 echo "Done. Files in ${DEST}:"
