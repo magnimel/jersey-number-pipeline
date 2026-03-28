@@ -1,9 +1,0 @@
-torch
-pytorch-lightning
-torchmetrics
-scikit-learn
-numpy
-tqdm
-wandb
-python-dotenv
-hydra-core
