@@ -39,12 +39,24 @@ from aggregation.dataset import TrackletDataset, collate_fn
 
 def load_model(checkpoint_path, device):
     ckpt = torch.load(checkpoint_path, map_location=device)
-    use_digit_classifier = ckpt.get("use_digit_classifier", False)
+
+    if "state_dict" in ckpt:
+        # PyTorch Lightning checkpoint: strip "model." prefix
+        raw_sd = ckpt["state_dict"]
+        sd = {k[len("model."):]: v for k, v in raw_sd.items() if k.startswith("model.")}
+        # Detect use_digit_classifier from classifier head input dimension
+        use_digit_classifier = sd["classifier.0.weight"].shape[1] == 257
+        epoch = ckpt.get("epoch", "?")
+    else:
+        # Legacy custom format
+        sd = ckpt["model_state_dict"]
+        use_digit_classifier = ckpt.get("use_digit_classifier", False)
+        epoch = ckpt.get("epoch", "?")
+
     model = TrackletAggregator(use_digit_classifier=use_digit_classifier).to(device)
-    model.load_state_dict(ckpt["model_state_dict"])
+    model.load_state_dict(sd)
     model.eval()
-    print(f"Loaded checkpoint  epoch={ckpt.get('epoch', '?')}  "
-          f"val_acc={ckpt.get('val_acc', 0.0):.4f}  "
+    print(f"Loaded checkpoint  epoch={epoch}  "
           f"use_digit_classifier={use_digit_classifier}")
     return model, use_digit_classifier
 
@@ -61,10 +73,16 @@ def _collate_raw(batch):
     return list(tracklet_ids), padded, lengths
 
 
-def run_inference_no_gt(model, str_results_path, device, use_digit_classifier, batch_size):
+def run_inference_no_gt(model, str_results_path, device, use_digit_classifier, batch_size,
+                        digit_preds=None):
     """
     Run inference directly on a jersey_id_results JSON without needing ground truth.
-    Returns {tracklet_id: predicted_jersey_number_str}.
+
+    Args:
+        digit_preds: Optional dict {tracklet_id: p_2digit (float)} from the digit
+                     classifier.  Required when use_digit_classifier=True.
+    Returns:
+        {tracklet_id: predicted_jersey_number_str}
     """
     with open(str_results_path) as f:
         str_results = json.load(f)
@@ -97,8 +115,15 @@ def run_inference_no_gt(model, str_results_path, device, use_digit_classifier, b
             ids, padded, lengths = _collate_raw(batch)
             padded = padded.to(device)
             lengths = lengths.to(device)
-            # p_2digit unavailable at inference without MoviNet; pass None
-            logits_out = model(padded, lengths, None)
+
+            if use_digit_classifier:
+                # Build p_2digit tensor from pre-computed digit classifier predictions
+                p_vals = [digit_preds.get(tid, 0.5) if digit_preds else 0.5 for tid in ids]
+                p_2digit = torch.tensor(p_vals, dtype=torch.float32, device=device).unsqueeze(1)
+            else:
+                p_2digit = None
+
+            logits_out = model(padded, lengths, p_2digit)
             preds = logits_out.argmax(dim=1).cpu().tolist()
             for tid, pred in zip(ids, preds):
                 results[tid] = str(pred)
