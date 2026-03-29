@@ -155,6 +155,15 @@ def download_models_common(root_dir):
     gdown_validated(cfg.dataset['SoccerNet']['pose_model_url'], save_path,
                     "vitpose-h.pth", min_mb=100)
 
+    sn = cfg.dataset['SoccerNet']
+    for key, url_key, min_mb in [
+        ('digit_classifier_model', 'digit_classifier_model_url', 5),
+        ('aggregation_model_improved', 'aggregation_model_improved_url', 1),
+    ]:
+        save_path = os.path.join(root_dir, sn[key])
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        gdown_validated(sn[url_key], save_path, sn[key], min_mb=min_mb)
+
 def download_models(root_dir, dataset):
     save_path = os.path.join(root_dir, cfg.dataset[dataset]['str_model'])
     gdown_validated(cfg.dataset[dataset]['str_model_url'], save_path,
