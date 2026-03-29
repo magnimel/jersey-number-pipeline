@@ -6,6 +6,7 @@ dependencies = [
     "torch",
     "torchvision",
     "pytorch-lightning",
+    "movinets",
     "wandb",
     "python-dotenv",
     "scikit-learn",
