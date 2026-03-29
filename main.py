@@ -643,7 +643,21 @@ def soccer_net_pipeline(args):
             else:
                 with open(agg_result_file) as _f:
                     results_dict = json.load(_f)
-                print(f"[Aggregation] Predicted {len(results_dict)} tracklets")
+                # Mirror heuristic behaviour: if no crop in a tracklet has a valid STR label,
+                # predict -1 instead of a spurious jersey number (handles illegible tracklets
+                # that slipped through the legibility classifier)
+                with open(str_result_file) as _f:
+                    _str_results = json.load(_f)
+                _tracklet_has_valid = {}
+                for _fname, _data in _str_results.items():
+                    _tid = _fname.split('_')[0]
+                    if not _tracklet_has_valid.get(_tid) and helpers.is_valid_number(str(_data.get('label', ''))):
+                        _tracklet_has_valid[_tid] = True
+                _overridden = sum(1 for tid in results_dict if not _tracklet_has_valid.get(tid))
+                for _tid in list(results_dict.keys()):
+                    if not _tracklet_has_valid.get(_tid):
+                        results_dict[_tid] = '-1'
+                print(f"[Aggregation] Predicted {len(results_dict)} tracklets ({_overridden} overridden to -1)")
         else:
             # 8b. Fallback: heuristic voting
             results_dict, analysis_results = helpers.process_jersey_id_predictions(str_result_file, useBias=True)
