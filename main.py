@@ -290,6 +290,10 @@ def detect_pipeline_stage(args):
             stages.append('esrgan')
         if os.path.exists(str_result_file):
             stages.append('str')
+        digit_predictions_path = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                              config.dataset['SoccerNet'][args.part]['digit_predictions'])
+        if os.path.exists(digit_predictions_path):
+            stages.append('digit_classifier')
         if os.path.exists(final_results_path):
             stages.append('combine')
             
@@ -319,9 +323,10 @@ def resume_pipeline_from_stage(dataset, stages):
                    "crops": True,
                    "esrgan": True,
                    "str": True,
+                   "digit_classifier": True,
                    "combine": True,
                    "eval": True}
-        
+
         # Disable stages that have already been completed
         if 'soccer_ball_filter' in stages:
             actions['soccer_ball_filter'] = False
@@ -339,6 +344,8 @@ def resume_pipeline_from_stage(dataset, stages):
             actions['esrgan'] = False
         if 'str' in stages:
             actions['str'] = False
+        if 'digit_classifier' in stages:
+            actions['digit_classifier'] = False
         if 'combine' in stages:
             actions['combine'] = False
             
@@ -543,6 +550,8 @@ def soccer_net_pipeline(args):
 
     str_result_file = os.path.join(config.dataset['SoccerNet']['working_dir'],
                                    config.dataset['SoccerNet'][args.part]['jersey_id_result'])
+    digit_predictions_file = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                          config.dataset['SoccerNet'][args.part]['digit_predictions'])
     #6.5 upscale crops with Real-ESRGAN before passing to STR
     if args.pipeline.get('esrgan', False) and success:
         print("Upscaling crops with Real-ESRGAN x4")
@@ -589,19 +598,53 @@ def soccer_net_pipeline(args):
         success = os.system(command) == 0
         print("Done predict numbers")
 
+    #7.5 run digit classifier on crops (--improved only)
+    if args.pipeline.get('digit_classifier', False) and success:
+        print("Running digit classifier")
+        try:
+            _dc_crops_dir = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                         config.dataset['SoccerNet'][args.part]['crops_sr_folder'], 'imgs')
+            _dc_ckpt = config.dataset['SoccerNet']['digit_classifier_model']
+            _dc_venv = os.path.join(os.getcwd(), 'digit_classifier', '.venv', 'bin', 'python')
+            Path(os.path.dirname(digit_predictions_file)).mkdir(parents=True, exist_ok=True)
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            command = (f"{_dc_venv} digit_classifier/infer.py"
+                       f" --crops_dir {_dc_crops_dir}"
+                       f" --checkpoint {_dc_ckpt}"
+                       f" --output_json {digit_predictions_file}"
+                       f" --batch_size 32")
+            success = os.system(command) == 0
+            if not success:
+                print("[DigitClassifier] Failed — will pass p_2digit=0.5 (uniform) to aggregator.")
+                success = True  # non-fatal
+        except Exception as e:
+            print(f"[DigitClassifier] Error: {e} — continuing without digit predictions.")
+        print("Done digit classifier")
+
     #str_result_file = os.path.join(config.dataset['SoccerNet']['working_dir'], "val_jersey_id_predictions.json")
     if args.pipeline['combine'] and success:
         #8. combine tracklet results
         analysis_results = None
 
         agg_ckpt = getattr(args, 'aggregation_model', None) or config.dataset['SoccerNet'].get('aggregation_model')
+        # --improved: use the dedicated improved aggregation checkpoint
+        if args.pipeline.get('improved'):
+            agg_ckpt = config.dataset['SoccerNet'].get('aggregation_model_improved') or agg_ckpt
+
         if args.pipeline.get('aggregation') and agg_ckpt and os.path.exists(agg_ckpt):
             # 8a. Use trained BiLSTM aggregation model
             print(f"[Aggregation] Running TrackletAggregator from {agg_ckpt}")
             from aggregation.evaluate import load_model as _load_agg, run_inference_no_gt as _agg_infer
             _device = "cuda" if torch.cuda.is_available() else "cpu"
             _agg_model, _use_p2 = _load_agg(agg_ckpt, _device)
-            results_dict = _agg_infer(_agg_model, str_result_file, _device, _use_p2, batch_size=256)
+            # Load digit predictions if available
+            _digit_preds = None
+            if _use_p2 and os.path.exists(digit_predictions_file):
+                with open(digit_predictions_file) as _df:
+                    _digit_preds = json.load(_df)
+                print(f"[Aggregation] Loaded digit predictions for {len(_digit_preds)} tracklets")
+            results_dict = _agg_infer(_agg_model, str_result_file, _device, _use_p2,
+                                      batch_size=256, digit_preds=_digit_preds)
             print(f"[Aggregation] Predicted {len(results_dict)} tracklets")
         else:
             # 8b. Fallback: heuristic voting
@@ -632,6 +675,8 @@ if __name__ == '__main__':
     parser.add_argument('part', help="Options: 'test', 'val', 'train', 'challenge")
     parser.add_argument('--train_str', action='store_true', default=False, help="Run training of jersey number recognition")
     parser.add_argument('--resume', action='store_true', default=False, help="Resume pipeline from last completed stage")
+    parser.add_argument('--improved', action='store_true', default=False,
+                        help="Run the improved pipeline: ESRGAN + digit classifier + LSTM aggregation")
     parser.add_argument('--esrgan', action='store_true', default=False,
                         help="Enable Real-ESRGAN x4 upscaling of crops before STR")
     parser.add_argument('--esrgan_intermediate_dir', default=None,
@@ -645,6 +690,9 @@ if __name__ == '__main__':
                              "If provided, replaces the heuristic voting stage with the BiLSTM model.")
     args = parser.parse_args()
 
+    # --improved implies --esrgan
+    if args.improved:
+        args.esrgan = True
     # --esrgan_intermediate_dir implies --esrgan
     if args.esrgan_intermediate_dir is not None:
         args.esrgan = True
@@ -673,12 +721,17 @@ if __name__ == '__main__':
                            "crops": True,
                            "esrgan": args.esrgan,
                            "str": True,
+                           "digit_classifier": args.improved,
                            "combine": True,
-                           "aggregation": args.aggregation_model is not None,
+                           "aggregation": args.improved or args.aggregation_model is not None,
+                           "improved": args.improved,
                            "eval": True}
-            # When resuming, only run esrgan if the flag was passed and the stage hasn't completed
+            # When resuming, only run esrgan/digit_classifier if the flags were passed and stages haven't completed
             if args.resume:
                 actions['esrgan'] = actions.get('esrgan', False) and args.esrgan
+                actions['digit_classifier'] = actions.get('digit_classifier', False) and args.improved
+                actions['aggregation'] = args.improved or (getattr(args, 'aggregation_model', None) is not None)
+                actions['improved'] = args.improved
             args.pipeline = actions
             soccer_net_pipeline(args)
         elif args.dataset == 'Hockey':
