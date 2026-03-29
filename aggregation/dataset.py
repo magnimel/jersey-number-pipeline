@@ -11,13 +11,14 @@ e.g. "0001_000123.png" -> tracklet "0001".
 """
 
 import json
+import os
 import torch
 from collections import defaultdict
 from torch.utils.data import Dataset
 
 
 class TrackletDataset(Dataset):
-    def __init__(self, str_results_path, gt_path, tracklet_ids=None):
+    def __init__(self, str_results_path, gt_path, tracklet_ids=None, digit_preds_path=None):
         """
         Args:
             str_results_path : path to jersey_id_results*.json
@@ -28,6 +29,12 @@ class TrackletDataset(Dataset):
             str_results = json.load(f)
         with open(gt_path) as f:
             gt = json.load(f)
+
+        digit_preds = {}
+        if digit_preds_path and os.path.exists(digit_preds_path):
+            with open(digit_preds_path) as f:
+                digit_preds = json.load(f)
+            print(f"[TrackletDataset] Loaded digit predictions: {digit_preds_path} ({len(digit_preds)} tracklets)")
 
         # Group crops by tracklet prefix
         tracklet_crops = defaultdict(list)
@@ -68,7 +75,8 @@ class TrackletDataset(Dataset):
                 skipped += 1
                 continue
 
-            p_2digit = float(len(str(label_int)) == 2)
+            # Use digit classifier probability if available, else fall back to GT
+            p_2digit = float(digit_preds[tracklet]) if tracklet in digit_preds else float(len(str(label_int)) == 2)
             self.samples.append((tracklet, logits_seq, p_2digit, label_int))
 
         if skipped:

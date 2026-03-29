@@ -1,8 +1,8 @@
 program: aggregation/train.py
 method: bayes
 metric:
-  name: val/acc
-  goal: maximize
+  name: val/loss
+  goal: minimize
 
 # W&B passes parameters as key=value (no hyphens) which is valid Hydra syntax
 command:
@@ -23,6 +23,8 @@ parameters:
     min: 1.0e-5
     max: 1.0e-2
   training.use_class_weights:
+    values: [true, false]
+  model.use_digit_classifier:
     values: [true, false]
   # Fixed across all sweep runs
   training.epochs:

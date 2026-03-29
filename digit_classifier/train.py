@@ -296,7 +296,7 @@ def _save_digit_predictions(model, ckpt_path, dm, args, output_dir, run):
         probs = []
         with torch.no_grad():
             for videos, _ in loader:
-                logits = best(videos.to(device))
+                logits = best.model(videos.to(device))
                 probs.extend(torch.sigmoid(logits).cpu().tolist())
 
         out = {tid: round(p, 6) for tid, p in zip(ds.tracklet_ids, probs)}

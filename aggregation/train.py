@@ -31,6 +31,23 @@ try:
 except ImportError:
     pass
 
+# Auto-derive digit prediction paths from DIGIT_CLASSIFIER_NAME so the user only
+# needs to set that one variable in .env
+_digit_name = os.environ.get("DIGIT_CLASSIFIER_NAME")
+if _digit_name:
+    _digit_ckpt_dir = os.environ.get(
+        "DIGIT_CHECKPOINTS_DIR",
+        f"/scratch/{os.environ.get('USER', '')}/jersey-digit-checkpoints",
+    )
+    os.environ.setdefault(
+        "AGG_DIGIT_TRAIN_PREDS",
+        os.path.join(_digit_ckpt_dir, _digit_name, "digit_predictions_train.json"),
+    )
+    os.environ.setdefault(
+        "AGG_DIGIT_TEST_PREDS",
+        os.path.join(_digit_ckpt_dir, _digit_name, "digit_predictions_test.json"),
+    )
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from aggregation.model import TrackletAggregator
@@ -48,12 +65,21 @@ class TrackletDataModule(pl.LightningDataModule):
             return
         self._setup_done = True
 
-        self.full_dataset = TrackletDataset(self.cfg.data.str_results, self.cfg.data.gt)
+        digit_train_preds = self.cfg.data.digit_train_preds
+        digit_test_preds = self.cfg.data.digit_test_preds
+
+        self.full_dataset = TrackletDataset(
+            self.cfg.data.str_results, self.cfg.data.gt,
+            digit_preds_path=digit_train_preds,
+        )
         print(f"Total tracklets: {len(self.full_dataset)}")
 
         if self.cfg.data.val_str_results and self.cfg.data.val_gt:
             self.train_dataset = self.full_dataset
-            self.val_dataset = TrackletDataset(self.cfg.data.val_str_results, self.cfg.data.val_gt)
+            self.val_dataset = TrackletDataset(
+                self.cfg.data.val_str_results, self.cfg.data.val_gt,
+                digit_preds_path=digit_train_preds,
+            )
         else:
             indices = list(range(len(self.full_dataset)))
             labels = [self.full_dataset.samples[i][3] for i in indices]
@@ -80,7 +106,8 @@ class TrackletDataModule(pl.LightningDataModule):
 
         if self.cfg.data.test_str_results and self.cfg.data.test_gt:
             self.test_dataset = TrackletDataset(
-                self.cfg.data.test_str_results, self.cfg.data.test_gt
+                self.cfg.data.test_str_results, self.cfg.data.test_gt,
+                digit_preds_path=digit_test_preds,
             )
             print(f"Test: {len(self.test_dataset)}")
         else:
@@ -185,7 +212,7 @@ def main(cfg: DictConfig):
     t = cfg.training
     run_name = (
         cfg.output.run_name
-        or f"agg_bs{t.batch_size}_lr{t.lr:.1e}_wd{t.weight_decay:.1e}_cw{'T' if t.use_class_weights else 'F'}"
+        or f"agg_bs{t.batch_size}_lr{t.lr:.1e}_wd{t.weight_decay:.1e}_cw{'T' if t.use_class_weights else 'F'}{'_dc' if cfg.model.use_digit_classifier else ''}"
     )
     if cfg.wandb.enabled:
         try:
@@ -207,19 +234,18 @@ def main(cfg: DictConfig):
     print(f"Output dir: {output_dir}")
 
     # Callbacks
-    ckpt_filename = "epoch{epoch:03d}_valacc{val/acc:.4f}"
     callbacks = [
         ModelCheckpoint(
             dirpath=output_dir,
-            filename=ckpt_filename,
-            monitor="val/acc",
-            mode="max",
-            save_top_k=1,
+            filename="epoch{epoch:03d}_valloss{val/loss:.4f}",
+            monitor="val/loss",
+            mode="min",
+            save_top_k=3,
             auto_insert_metric_name=False,
         ),
         EarlyStopping(
-            monitor="val/acc",
-            mode="max",
+            monitor="val/loss",
+            mode="min",
             patience=cfg.training.early_stopping_patience,
             verbose=True,
         ),
@@ -240,18 +266,23 @@ def main(cfg: DictConfig):
     trainer.fit(lit_model, datamodule=dm)
 
     best_ckpt = callbacks[0].best_model_path
-    best_val_acc = callbacks[0].best_model_score
-    print(f"\nTraining done. Best val/acc={best_val_acc:.4f}" if best_val_acc is not None else "\nTraining done. No checkpoint saved.")
+    best_val_loss = callbacks[0].best_model_score
+    print(f"\nTraining done. Best val/loss={best_val_loss:.4f}" if best_val_loss is not None else "\nTraining done. No checkpoint saved.")
     print(f"Best checkpoint: {best_ckpt}")
 
+    # Save all top-k checkpoints ranked by val/loss (ascending)
+    all_ckpts = sorted(callbacks[0].best_k_models.items(), key=lambda x: x[1])
     with open(os.path.join(output_dir, "best_ckpt.txt"), "w") as f:
-        f.write(best_ckpt + "\n")
+        for path, score in all_ckpts:
+            f.write(f"{path}\t{score:.6f}\n")
     print(f"Update configuration.py: dataset['SoccerNet']['aggregation_model'] = '{best_ckpt}'")
 
-    # Test set evaluation using the best checkpoint
-    if dm.test_dataset is not None and best_ckpt:
-        print("\nEvaluating best checkpoint on test set...")
-        trainer.test(lit_model, datamodule=dm, ckpt_path=best_ckpt)
+    # Evaluate all top-k checkpoints on test set to find best by test/acc
+    if dm.test_dataset is not None:
+        for ckpt_path, val_loss in all_ckpts:
+            if ckpt_path:
+                print(f"\nEvaluating {os.path.basename(ckpt_path)} (val/loss={val_loss:.4f})...")
+                trainer.test(lit_model, datamodule=dm, ckpt_path=ckpt_path)
 
 
 if __name__ == "__main__":
