@@ -192,12 +192,13 @@ def setup_sam(root_dir):
 def setup_main_env(root_dir):
     """Create the 'jersey' conda env and install all runtime dependencies."""
     env_name = cfg.main_env
-    if env_name not in get_conda_envs():
-        print(f"Creating conda env '{env_name}' (python=3.9)...")
-        make_conda_env(env_name, libs="python=3.9")
-        os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip -y")
-    else:
-        print(f"Conda env '{env_name}' already exists, installing/updating packages...")
+    if env_name in get_conda_envs():
+        print(f"Conda env '{env_name}' already exists, skipping creation.")
+        return
+
+    print(f"Creating conda env '{env_name}' (python=3.9)...")
+    make_conda_env(env_name, libs="python=3.9")
+    os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip -y")
 
     pkgs = [
         "torch==1.9.0+cu111 torchvision==0.10.0+cu111 torchaudio==0.9.0 "
@@ -216,13 +217,12 @@ def setup_main_env(root_dir):
 def setup_digit_env(root_dir):
     """Create the 'digit_classifier' conda env (Python 3.11) with movinets."""
     env_name = cfg.digit_env
-    if env_name not in get_conda_envs():
-        print(f"Creating conda env '{env_name}' (python=3.11)...")
-        make_conda_env(env_name, libs="python=3.11")
-        os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip -y")
-    else:
-        print(f"Conda env '{env_name}' already exists, installing/updating packages...")
-
+    if env_name in get_conda_envs():
+        print(f"Conda env '{env_name}' already exists, skipping creation.")
+        return
+    print(f"Creating conda env '{env_name}' (python=3.11)...")
+    make_conda_env(env_name, libs="python=3.11")
+    os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip -y")
     pkgs = [
         "torch torchvision --index-url https://download.pytorch.org/whl/cu121",
         "movinets Pillow numpy",
@@ -234,13 +234,12 @@ def setup_digit_env(root_dir):
 def setup_agg_env(root_dir):
     """Create the 'aggregation' conda env (Python 3.11) for TrackletAggregator inference."""
     env_name = cfg.agg_env
-    if env_name not in get_conda_envs():
-        print(f"Creating conda env '{env_name}' (python=3.11)...")
-        make_conda_env(env_name, libs="python=3.11")
-        os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip -y")
-    else:
-        print(f"Conda env '{env_name}' already exists, installing/updating packages...")
-
+    if env_name in get_conda_envs():
+        print(f"Conda env '{env_name}' already exists, skipping creation.")
+        return
+    print(f"Creating conda env '{env_name}' (python=3.11)...")
+    make_conda_env(env_name, libs="python=3.11")
+    os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip -y")
     pkgs = [
         "torch --index-url https://download.pytorch.org/whl/cu121",
         "numpy",
