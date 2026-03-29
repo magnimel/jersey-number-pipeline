@@ -14,6 +14,9 @@ reid_script = 'centroid_reid.py'
 # digit classifier (Python 3.11, movinets)
 digit_env = 'digit_classifier'
 
+# aggregation (Python 3.11, pytorch-lightning, torchmetrics)
+agg_env = 'aggregation'
+
 reid_home = 'reid/'
 
 # ---------------------------------------------------------------------------

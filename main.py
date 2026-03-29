@@ -609,7 +609,7 @@ def soccer_net_pipeline(args):
                    f" --crops_dir {_dc_crops_dir}"
                    f" --checkpoint {_dc_ckpt}"
                    f" --output_json {digit_predictions_file}"
-                   f" --batch_size 32")
+                   f" --batch_size 128")
         success = os.system(command) == 0
         if not success:
             print("[DigitClassifier] Failed — cannot continue without digit predictions (aggregation model requires them).")
@@ -628,18 +628,22 @@ def soccer_net_pipeline(args):
         if args.pipeline.get('aggregation') and agg_ckpt and os.path.exists(agg_ckpt):
             # 8a. Use trained BiLSTM aggregation model
             print(f"[Aggregation] Running TrackletAggregator from {agg_ckpt}")
-            from aggregation.evaluate import load_model as _load_agg, run_inference_no_gt as _agg_infer
-            _device = "cuda" if torch.cuda.is_available() else "cpu"
-            _agg_model, _use_p2 = _load_agg(agg_ckpt, _device)
-            # Load digit predictions if available
-            _digit_preds = None
-            if _use_p2 and os.path.exists(digit_predictions_file):
-                with open(digit_predictions_file) as _df:
-                    _digit_preds = json.load(_df)
-                print(f"[Aggregation] Loaded digit predictions for {len(_digit_preds)} tracklets")
-            results_dict = _agg_infer(_agg_model, str_result_file, _device, _use_p2,
-                                      batch_size=256, digit_preds=_digit_preds)
-            print(f"[Aggregation] Predicted {len(results_dict)} tracklets")
+            agg_result_file = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                           args.part, 'agg_results.json')
+            Path(os.path.dirname(agg_result_file)).mkdir(parents=True, exist_ok=True)
+            command = (f"conda run -n {config.agg_env} --no-capture-output python aggregation/evaluate.py"
+                       f" --checkpoint {agg_ckpt}"
+                       f" --str_results {str_result_file}"
+                       f" --digit_preds {digit_predictions_file}"
+                       f" --output_json {agg_result_file}"
+                       f" --batch_size 512")
+            success = os.system(command) == 0
+            if not success:
+                print("[Aggregation] Failed.")
+            else:
+                with open(agg_result_file) as _f:
+                    results_dict = json.load(_f)
+                print(f"[Aggregation] Predicted {len(results_dict)} tracklets")
         else:
             # 8b. Fallback: heuristic voting
             results_dict, analysis_results = helpers.process_jersey_id_predictions(str_result_file, useBias=True)

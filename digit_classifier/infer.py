@@ -101,7 +101,54 @@ def _collate(batch):
     return list(ids), torch.stack(videos)
 
 
-def run_inference(model, crops_dir, device, batch_size=32):
+def _calibrate_batch_size(model, sample_videos: torch.Tensor, device, max_bs: int) -> int:
+    import time
+    n = sample_videos.shape[0]
+    candidates = [bs for bs in [1, 2, 4, 8, 16, 32, 64, 128] if bs <= max_bs and bs <= n]
+    if not candidates:
+        return max_bs
+
+    def _infer(bs):
+        with torch.no_grad():
+            model(sample_videos[:bs].to(device))
+
+    try:
+        _infer(1)
+        if device.type != 'cpu':
+            torch.cuda.synchronize()
+    except Exception:
+        pass
+
+    best_bs, best_rate = candidates[0], 0.0
+    print("[DigitClassifier] Calibrating batch size ...")
+    for bs in candidates:
+        batch = (sample_videos.repeat((bs // n) + 1, 1, 1, 1, 1))[:bs]
+        try:
+            times = []
+            for _ in range(3):
+                if device.type != 'cpu':
+                    torch.cuda.synchronize()
+                t0 = time.perf_counter()
+                with torch.no_grad():
+                    model(batch.to(device))
+                if device.type != 'cpu':
+                    torch.cuda.synchronize()
+                times.append(time.perf_counter() - t0)
+            rate = bs / sorted(times)[1]
+            print(f"  batch_size={bs:4d}  →  {rate:.1f} tracklets/s")
+            if rate > best_rate:
+                best_rate, best_bs = rate, bs
+        except RuntimeError as e:
+            if "out of memory" in str(e).lower():
+                torch.cuda.empty_cache()
+                print(f"  batch_size={bs:4d}  →  OOM (skipping)")
+                break
+            raise
+    print(f"[DigitClassifier] Selected batch_size={best_bs} ({best_rate:.1f} tracklets/s)")
+    return best_bs
+
+
+def run_inference(model, crops_dir, device, batch_size=128):
     """Run digit classifier on all tracklets in crops_dir.
 
     Returns:
@@ -111,6 +158,11 @@ def run_inference(model, crops_dir, device, batch_size=32):
     if len(dataset) == 0:
         print("[DigitClassifier] No images found in crops_dir.")
         return {}
+
+    if device.type != 'cpu':
+        n_sample = min(32, len(dataset))
+        _, sample_videos = _collate([dataset[i] for i in range(n_sample)])
+        batch_size = _calibrate_batch_size(model, sample_videos, device, batch_size)
 
     loader = DataLoader(
         dataset, batch_size=batch_size, shuffle=False,

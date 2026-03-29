@@ -225,7 +225,25 @@ def setup_digit_env(root_dir):
 
     pkgs = [
         "torch torchvision --index-url https://download.pytorch.org/whl/cu121",
-        "pytorch-lightning movinets Pillow numpy",
+        "movinets Pillow numpy",
+    ]
+    for pkg in pkgs:
+        os.system(f"conda run --live-stream -n {env_name} pip install {pkg}")
+
+
+def setup_agg_env(root_dir):
+    """Create the 'aggregation' conda env (Python 3.11) for TrackletAggregator inference."""
+    env_name = cfg.agg_env
+    if env_name not in get_conda_envs():
+        print(f"Creating conda env '{env_name}' (python=3.11)...")
+        make_conda_env(env_name, libs="python=3.11")
+        os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip -y")
+    else:
+        print(f"Conda env '{env_name}' already exists, installing/updating packages...")
+
+    pkgs = [
+        "torch --index-url https://download.pytorch.org/whl/cu121",
+        "numpy",
     ]
     for pkg in pkgs:
         os.system(f"conda run --live-stream -n {env_name} pip install {pkg}")
@@ -290,6 +308,7 @@ if __name__ == '__main__':
     # Create main runtime env first (other setup steps depend on it)
     setup_main_env(root_dir)
     setup_digit_env(root_dir)
+    setup_agg_env(root_dir)
 
     # common for both datasets
     setup_sam(root_dir)

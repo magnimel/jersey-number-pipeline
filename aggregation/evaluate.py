@@ -73,6 +73,58 @@ def _collate_raw(batch):
     return list(tracklet_ids), padded, lengths
 
 
+def _calibrate_batch_size(model, sample_padded, sample_lengths, sample_p2digit, device, max_bs):
+    import time
+    n = sample_padded.shape[0]
+    candidates = [bs for bs in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512] if bs <= max_bs and bs <= n]
+    if not candidates:
+        return max_bs
+
+    def _infer(bs):
+        with torch.no_grad():
+            p = (sample_p2digit[:bs].to(device) if sample_p2digit is not None else None)
+            model(sample_padded[:bs].to(device), sample_lengths[:bs].to(device), p)
+
+    try:
+        _infer(1)
+        if device.type != 'cpu':
+            torch.cuda.synchronize()
+    except Exception:
+        pass
+
+    best_bs, best_rate = candidates[0], 0.0
+    print("[Aggregation] Calibrating batch size ...")
+    for bs in candidates:
+        repeat = (bs // n) + 1
+        padded = sample_padded.repeat(repeat, 1, 1)[:bs]
+        lengths = sample_lengths.repeat(repeat)[:bs]
+        p2 = sample_p2digit.repeat(repeat, 1)[:bs] if sample_p2digit is not None else None
+        try:
+            times = []
+            for _ in range(3):
+                if device.type != 'cpu':
+                    torch.cuda.synchronize()
+                t0 = time.perf_counter()
+                with torch.no_grad():
+                    p = p2.to(device) if p2 is not None else None
+                    model(padded.to(device), lengths.to(device), p)
+                if device.type != 'cpu':
+                    torch.cuda.synchronize()
+                times.append(time.perf_counter() - t0)
+            rate = bs / sorted(times)[1]
+            print(f"  batch_size={bs:4d}  →  {rate:.1f} tracklets/s")
+            if rate > best_rate:
+                best_rate, best_bs = rate, bs
+        except RuntimeError as e:
+            if "out of memory" in str(e).lower():
+                torch.cuda.empty_cache()
+                print(f"  batch_size={bs:4d}  →  OOM (skipping)")
+                break
+            raise
+    print(f"[Aggregation] Selected batch_size={best_bs} ({best_rate:.1f} tracklets/s)")
+    return best_bs
+
+
 def run_inference_no_gt(model, str_results_path, device, use_digit_classifier, batch_size,
                         digit_preds=None):
     """
@@ -107,6 +159,18 @@ def run_inference_no_gt(model, str_results_path, device, use_digit_classifier, b
         for t in tracklet_list
     ]
 
+    if device.type != 'cpu' and samples:
+        n_sample = min(64, len(samples))
+        _, s_padded, s_lengths = _collate_raw(samples[:n_sample])
+        if use_digit_classifier:
+            s_p2 = torch.tensor(
+                [digit_preds.get(t, 0.5) if digit_preds else 0.5 for t, _ in samples[:n_sample]],
+                dtype=torch.float32,
+            ).unsqueeze(1)
+        else:
+            s_p2 = None
+        batch_size = _calibrate_batch_size(model, s_padded, s_lengths, s_p2, device, batch_size)
+
     results = {}
     model.eval()
     with torch.no_grad():
@@ -140,6 +204,8 @@ def main():
                         help="Path to *_gt.json. If omitted, inference-only mode is used.")
     parser.add_argument("--output_json", default=None,
                         help="Write {tracklet: predicted_number} to this JSON file.")
+    parser.add_argument("--digit_preds", default=None,
+                        help="Path to digit_predictions.json from digit classifier.")
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--num_workers", type=int, default=2)
     args = parser.parse_args()
@@ -179,8 +245,13 @@ def main():
 
     else:
         # Inference-only mode: no GT needed, no dataset class required
+        digit_preds = None
+        if args.digit_preds and os.path.exists(args.digit_preds):
+            with open(args.digit_preds) as f:
+                digit_preds = json.load(f)
         result = run_inference_no_gt(
-            model, args.str_results, device, use_digit_classifier, args.batch_size
+            model, args.str_results, device, use_digit_classifier, args.batch_size,
+            digit_preds=digit_preds,
         )
         print(f"Predicted {len(result)} tracklets")
 
