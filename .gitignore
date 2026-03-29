@@ -2,6 +2,7 @@
 aggregation/data/
 aggregation/checkpoints/
 aggregation/logs/
+aggregation/runs/
 aggregation/.env
 wandb/
 

@@ -50,18 +50,21 @@ class TrackletVideoDataset(Dataset):
                 frame_paths = sorted(glob.glob(os.path.join(img_dir, f"{tracklet_id}_*.jpg")))
             if not frame_paths:
                 continue
-            tracklets.append((frame_paths, label))
+            tracklets.append((tracklet_id, frame_paths, label))
 
         if indices is not None:
             tracklets = [tracklets[i] for i in indices]
 
         self.tracklets = tracklets
+        self.tracklet_ids = [tid for tid, _, _ in tracklets]
+        self.tracklets = [(fp, lbl) for _, fp, lbl in tracklets]
         self.augment = augment
         self.n_frames = n_frames
         self.img_size = img_size
 
         n0 = sum(1 for _, l in self.tracklets if l == 0)
         n1 = sum(1 for _, l in self.tracklets if l == 1)
+
         print(f"  Loaded: 1-digit={n0}, 2-digit={n1}, total={len(self.tracklets)}")
 
     def __len__(self):

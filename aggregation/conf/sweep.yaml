@@ -1,7 +1,7 @@
 program: aggregation/train.py
 method: bayes
 metric:
-  name: val_accuracy
+  name: val/acc
   goal: maximize
 
 # W&B passes parameters as key=value (no hyphens) which is valid Hydra syntax

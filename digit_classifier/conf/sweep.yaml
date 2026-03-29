@@ -3,11 +3,10 @@ command:
   - ${env}
   - python
   - ${program}
-  - --skip_test
   - ${args}
 method: bayes
 metric:
-  name: val_acc
+  name: val/acc
   goal: maximize
 
 parameters:

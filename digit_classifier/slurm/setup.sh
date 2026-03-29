@@ -42,6 +42,9 @@ echo "Python: $(python --version)"
 cd digit_classifier
 python -m venv .venv
 source .venv/bin/activate
-uv sync --active
+unset GIT_ASKPASS SSH_ASKPASS
+GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0="" \
+    TMPDIR="$SLURM_TMPDIR" uv sync --active
+TMPDIR="$SLURM_TMPDIR" uv pip install -q https://github.com/Atze00/MoViNet-pytorch/archive/refs/heads/main.zip
 echo "Dependencies installed"
 cd "$NEW_REPO_PATH"

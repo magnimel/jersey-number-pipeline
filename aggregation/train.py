@@ -241,7 +241,7 @@ def main(cfg: DictConfig):
 
     best_ckpt = callbacks[0].best_model_path
     best_val_acc = callbacks[0].best_model_score
-    print(f"\nTraining done. Best val_acc={best_val_acc:.4f}")
+    print(f"\nTraining done. Best val/acc={best_val_acc:.4f}" if best_val_acc is not None else "\nTraining done. No checkpoint saved.")
     print(f"Best checkpoint: {best_ckpt}")
 
     with open(os.path.join(output_dir, "best_ckpt.txt"), "w") as f:
@@ -249,7 +249,7 @@ def main(cfg: DictConfig):
     print(f"Update configuration.py: dataset['SoccerNet']['aggregation_model'] = '{best_ckpt}'")
 
     # Test set evaluation using the best checkpoint
-    if dm.test_dataset is not None:
+    if dm.test_dataset is not None and best_ckpt:
         print("\nEvaluating best checkpoint on test set...")
         trainer.test(lit_model, datamodule=dm, ckpt_path=best_ckpt)
 

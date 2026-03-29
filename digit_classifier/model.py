@@ -18,9 +18,10 @@ class DigitCountMoviNet(nn.Module):
         if model_id not in cfg_map:
             raise ValueError(f"model_id must be one of {list(cfg_map)}, got '{model_id}'")
         self.backbone = MoViNet(cfg_map[model_id], causal=False, pretrained=True)
-        # Replace last Conv3d in classifier for binary output
+        # Replace last ConvBlock3D in classifier with a plain Conv3d for binary output
         last = self.backbone.classifier[-1]
-        self.backbone.classifier[-1] = nn.Conv3d(last.in_channels, 1, (1, 1, 1))
+        in_ch = last.conv_1[0].in_channels
+        self.backbone.classifier[-1] = nn.Conv3d(in_ch, 1, (1, 1, 1))
 
     def forward(self, video):
         # video: (B, C, T, H, W) -> out: (B, 1, 1, 1, 1)

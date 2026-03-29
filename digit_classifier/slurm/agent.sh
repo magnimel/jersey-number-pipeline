@@ -4,7 +4,7 @@
 #SBATCH --gpus-per-node=h100:1
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=16G
+#SBATCH --mem=32G
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
 
@@ -14,5 +14,6 @@ SETUP_SCRIPT="$REPO_PATH/digit_classifier/slurm/setup.sh"
 source "$SETUP_SCRIPT"
 # ONLY ADD COMMANDS BELOW THIS LINE
 
+export PYTHONPATH="$NEW_REPO_PATH:${PYTHONPATH}"
 # SWEEP_PATH is injected by sweep.sh as an env var passed to sbatch
 wandb agent --count 1 "$SWEEP_PATH"
