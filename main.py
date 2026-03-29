@@ -1,6 +1,5 @@
 import argparse
 import os
-import sys
 import torch
 import legibility_classifier as lc
 import numpy as np
@@ -606,7 +605,7 @@ def soccer_net_pipeline(args):
                                      config.dataset['SoccerNet'][args.part]['crops_sr_folder'], 'imgs')
         _dc_ckpt = config.dataset['SoccerNet']['digit_classifier_model']
         Path(os.path.dirname(digit_predictions_file)).mkdir(parents=True, exist_ok=True)
-        command = (f"{sys.executable} digit_classifier/infer.py"
+        command = (f"conda run -n {config.digit_env} --no-capture-output python digit_classifier/infer.py"
                    f" --crops_dir {_dc_crops_dir}"
                    f" --checkpoint {_dc_ckpt}"
                    f" --output_json {digit_predictions_file}"

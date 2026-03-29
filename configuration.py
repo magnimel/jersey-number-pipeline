@@ -11,6 +11,9 @@ str_platform = 'cu113'
 reid_env = 'centroids'
 reid_script = 'centroid_reid.py'
 
+# digit classifier (Python 3.11, movinets)
+digit_env = 'digit_classifier'
+
 reid_home = 'reid/'
 
 # ---------------------------------------------------------------------------

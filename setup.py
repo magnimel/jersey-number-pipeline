@@ -192,13 +192,12 @@ def setup_sam(root_dir):
 def setup_main_env(root_dir):
     """Create the 'jersey' conda env and install all runtime dependencies."""
     env_name = cfg.main_env
-    if env_name in get_conda_envs():
-        print(f"Conda env '{env_name}' already exists, skipping creation.")
-        return
-
-    print(f"Creating conda env '{env_name}' (python=3.9)...")
-    make_conda_env(env_name, libs="python=3.9")
-    os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip -y")
+    if env_name not in get_conda_envs():
+        print(f"Creating conda env '{env_name}' (python=3.9)...")
+        make_conda_env(env_name, libs="python=3.9")
+        os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip -y")
+    else:
+        print(f"Conda env '{env_name}' already exists, installing/updating packages...")
 
     pkgs = [
         "torch==1.9.0+cu111 torchvision==0.10.0+cu111 torchaudio==0.9.0 "
@@ -207,8 +206,26 @@ def setup_main_env(root_dir):
         "'setuptools<70.0.0'",
         "realesrgan basicsr",
         "pandas==2.2.3 tqdm==4.66.5 scipy==1.13.1 SoccerNet gdown",
-        # aggregation + digit classifier dependencies (run in this env via main.py)
-        "scikit-learn python-dotenv hydra-core movinets pytorch-lightning",
+        # aggregation dependencies (imported directly into main.py in this env)
+        "scikit-learn python-dotenv hydra-core",
+    ]
+    for pkg in pkgs:
+        os.system(f"conda run --live-stream -n {env_name} pip install {pkg}")
+
+
+def setup_digit_env(root_dir):
+    """Create the 'digit_classifier' conda env (Python 3.11) with movinets."""
+    env_name = cfg.digit_env
+    if env_name not in get_conda_envs():
+        print(f"Creating conda env '{env_name}' (python=3.11)...")
+        make_conda_env(env_name, libs="python=3.11")
+        os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip -y")
+    else:
+        print(f"Conda env '{env_name}' already exists, installing/updating packages...")
+
+    pkgs = [
+        "torch torchvision --index-url https://download.pytorch.org/whl/cu121",
+        "pytorch-lightning movinets Pillow numpy",
     ]
     for pkg in pkgs:
         os.system(f"conda run --live-stream -n {env_name} pip install {pkg}")
@@ -272,6 +289,7 @@ if __name__ == '__main__':
 
     # Create main runtime env first (other setup steps depend on it)
     setup_main_env(root_dir)
+    setup_digit_env(root_dir)
 
     # common for both datasets
     setup_sam(root_dir)
