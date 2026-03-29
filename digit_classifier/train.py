@@ -254,6 +254,7 @@ def main():
         max_epochs=args.epochs,
         accelerator="auto",
         devices=1,
+        precision="bf16-mixed",
         logger=wandb_logger,
         callbacks=callbacks,
         log_every_n_steps=1,
