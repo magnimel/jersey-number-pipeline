@@ -49,6 +49,7 @@ dataset = {'SoccerNet':
                         'crops_folder': 'crops',
                         'crops_sr_folder': 'test/crops_sr',
                         'jersey_id_result': 'jersey_id_results.json',
+                        'digit_predictions': 'test/digit_predictions.json',
                         'final_result': 'final_results.json'
                     },
                  'val': {
@@ -60,6 +61,7 @@ dataset = {'SoccerNet':
                         'soccer_ball_list': 'soccer_ball_val.json',
                         'crops_folder': 'crops_val',
                         'crops_sr_folder': 'val/crops_sr',
+                        'digit_predictions': 'val/digit_predictions.json',
                         'sim_filtered': 'val/main_subject_0.4.json',
                         'gauss_filtered': 'val/main_subject_gauss_th=3.5_r=3.json',
                         'pose_input_json': 'pose_input_val.json',
@@ -81,6 +83,7 @@ dataset = {'SoccerNet':
                      'pose_output_json': 'pose_results_train.json',
                      'crops_folder': 'crops_train',
                      'crops_sr_folder': 'train/crops_sr',
+                     'digit_predictions': 'train/digit_predictions.json',
                      'jersey_id_result': 'jersey_id_results_train.json',
                      'final_result': 'final_results_train.json',
                      'raw_legible_result': 'train_raw_legible_combined.json'
@@ -98,6 +101,7 @@ dataset = {'SoccerNet':
                         'pose_output_json': 'challenge_pose_results.json',
                         'crops_folder': 'challenge_crops',
                         'crops_sr_folder': 'challenge/crops_sr',
+                        'digit_predictions': 'challenge/digit_predictions.json',
                         'jersey_id_result': 'challenge_jersey_id_results.json',
                         'final_result': 'challenge_final_results.json',
                         'raw_legible_result': 'challenge_raw_legible_vit.json'
@@ -114,6 +118,19 @@ dataset = {'SoccerNet':
                  # Leave as None to use the default heuristic voting stage.
                  'aggregation_model': None,
                  'esrgan_model': 'models/RealESRGAN_x4plus.pth',
+
+                 # ---------------------------------------------------------------------------
+                 # --improved pipeline: digit classifier + LSTM aggregation
+                 # ---------------------------------------------------------------------------
+                 # DigitCountMoviNet (a3) checkpoint — predicts P(2-digit jersey) per tracklet.
+                 # Set this to the local path after downloading from Google Drive.
+                 'digit_classifier_model': 'models/digit_a3_bs16_nf256_lr4.3e-04_wd5.6e-03.ckpt',
+                 'digit_classifier_model_url': 'https://drive.google.com/uc?id=11RwGs6dS60ehnIayQ0zNR6F8Am3AZXP_',
+                 # TrackletAggregator (BiLSTM + digit classifier) checkpoint.
+                 # Set this to the local path after downloading from Google Drive.
+                 'aggregation_model_improved': 'models/agg_bs64_lr1.6e-03_wd1.1e-05_cwF_dc.ckpt',
+                 'aggregation_model_improved_url': 'https://drive.google.com/uc?id=1pOdlXxRfV7cZt7oCkmQdU5zw8nV4vXAX',
+                 # ---------------------------------------------------------------------------
 
                  #'str_model': 'pretrained=parseq',
                  'str_model_url': "https://drive.google.com/uc?id=1DULUhorGHsozOumtSocon0V-kbKwFCWG",
