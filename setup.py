@@ -8,6 +8,32 @@ import argparse
 
 ###### common setup utils ##############
 
+def is_valid_checkpoint(path, min_mb=10):
+    """Return False if the file is missing, too small, or starts with HTML/JSON (error page)."""
+    if not os.path.isfile(path):
+        return False
+    if os.path.getsize(path) < min_mb * 1024 * 1024:
+        return False
+    with open(path, 'rb') as f:
+        header = f.read(4)
+    return header[0:1] not in (b'<', b'{')
+
+
+def gdown_validated(url, save_path, label, min_mb=10):
+    """Download via gdown and validate; removes and warns if still corrupt after download."""
+    if os.path.isfile(save_path):
+        if is_valid_checkpoint(save_path, min_mb):
+            print(f"  OK (already present): {label}")
+            return
+        print(f"  CORRUPT — removing and re-downloading: {label}")
+        os.remove(save_path)
+    os.makedirs(os.path.dirname(save_path) or '.', exist_ok=True)
+    gdown.download(url, save_path, quiet=False)
+    if not is_valid_checkpoint(save_path, min_mb):
+        print(f"  WARNING: {label} still looks invalid after download (quota exceeded?)")
+        os.remove(save_path)
+
+
 def make_conda_env(env_name, libs=""):
     os.system(f"conda create -n {env_name} -y "+libs)
 
@@ -113,9 +139,9 @@ def setup_str(root):
     if not env_name in get_conda_envs():
         make_conda_env(env_name, libs="python=3.9")
         os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip")
-        # Strip torch/torchvision from requirements.txt so we don't download the
-        # CPU build only to immediately replace it with the GPU build.
-        os.system("grep -Ev '^torch(vision)?==' requirements/core.txt > /tmp/req_no_torch.txt")
+        # Strip torch/torchvision and the cpu-only index URL from requirements so
+        # we don't pull in the CPU build when installing other packages.
+        os.system("grep -Ev '^torch(vision)?==|--extra-index-url.*cpu' requirements/core.txt > /tmp/req_no_torch.txt")
         os.system(f"conda run --live-stream -n {env_name} pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121")
         os.system(f"conda run --live-stream -n {env_name} pip install -r /tmp/req_no_torch.txt -e .[train,test]")
         os.system(f"conda run --live-stream -n {env_name} pip install 'numpy<2'")
@@ -123,28 +149,29 @@ def setup_str(root):
     os.chdir(root)
 
 def download_models_common(root_dir):
-    repo_name = "ViTPose"
-    rep_path = "./pose"
+    os.chdir(root_dir)
+    save_path = os.path.join(root_dir, "pose", "ViTPose", "checkpoints", "vitpose-h.pth")
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    gdown_validated(cfg.dataset['SoccerNet']['pose_model_url'], save_path,
+                    "vitpose-h.pth", min_mb=100)
 
-    url = cfg.dataset['SoccerNet']['pose_model_url']
-    models_folder_path = os.path.join(rep_path, repo_name, "checkpoints")
-    if not os.path.exists(models_folder_path):
-        os.makedirs(models_folder_path, exist_ok=True)
-    save_path = os.path.join(rep_path, "ViTPose", "checkpoints", "vitpose-h.pth")
-    if not os.path.isfile(save_path):
-        gdown.download(url, save_path)
+    sn = cfg.dataset['SoccerNet']
+    for key, url_key, min_mb in [
+        ('digit_classifier_model', 'digit_classifier_model_url', 5),
+        ('aggregation_model_improved', 'aggregation_model_improved_url', 1),
+    ]:
+        save_path = os.path.join(root_dir, sn[key])
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        gdown_validated(sn[url_key], save_path, sn[key], min_mb=min_mb)
 
 def download_models(root_dir, dataset):
-    # download and save fine-tuned model
     save_path = os.path.join(root_dir, cfg.dataset[dataset]['str_model'])
-    if not os.path.isfile(save_path):
-        source_url = cfg.dataset[dataset]['str_model_url']
-        gdown.download(source_url, save_path)
+    gdown_validated(cfg.dataset[dataset]['str_model_url'], save_path,
+                    cfg.dataset[dataset]['str_model'], min_mb=10)
 
     save_path = os.path.join(root_dir, cfg.dataset[dataset]['legibility_model'])
-    if not os.path.isfile(save_path):
-        source_url = cfg.dataset[dataset]['legibility_model_url']
-        gdown.download(source_url, save_path)
+    gdown_validated(cfg.dataset[dataset]['legibility_model_url'], save_path,
+                    cfg.dataset[dataset]['legibility_model'], min_mb=5)
 
 def setup_sam(root_dir):
     os.chdir(root_dir)
@@ -180,6 +207,43 @@ def setup_main_env(root_dir):
         "'setuptools<70.0.0'",
         "realesrgan basicsr",
         "pandas==2.2.3 tqdm==4.66.5 scipy==1.13.1 SoccerNet gdown",
+        # aggregation dependencies (imported directly into main.py in this env)
+        "scikit-learn python-dotenv hydra-core",
+    ]
+    for pkg in pkgs:
+        os.system(f"conda run --live-stream -n {env_name} pip install {pkg}")
+
+
+def setup_digit_env(root_dir):
+    """Create the 'digit_classifier' conda env (Python 3.11) with movinets."""
+    env_name = cfg.digit_env
+    if env_name in get_conda_envs():
+        print(f"Conda env '{env_name}' already exists, skipping creation.")
+        return
+    print(f"Creating conda env '{env_name}' (python=3.11)...")
+    make_conda_env(env_name, libs="python=3.11")
+    os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip -y")
+    pkgs = [
+        "torch torchvision --index-url https://download.pytorch.org/whl/cu121",
+        "https://github.com/Atze00/MoViNet-pytorch/archive/refs/heads/main.zip",
+        "Pillow numpy",
+    ]
+    for pkg in pkgs:
+        os.system(f"conda run --live-stream -n {env_name} pip install {pkg}")
+
+
+def setup_agg_env(root_dir):
+    """Create the 'aggregation' conda env (Python 3.11) for TrackletAggregator inference."""
+    env_name = cfg.agg_env
+    if env_name in get_conda_envs():
+        print(f"Conda env '{env_name}' already exists, skipping creation.")
+        return
+    print(f"Creating conda env '{env_name}' (python=3.11)...")
+    make_conda_env(env_name, libs="python=3.11")
+    os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip -y")
+    pkgs = [
+        "torch --index-url https://download.pytorch.org/whl/cu121",
+        "numpy",
     ]
     for pkg in pkgs:
         os.system(f"conda run --live-stream -n {env_name} pip install {pkg}")
@@ -210,13 +274,17 @@ def setup_esrgan(root_dir):
     os.makedirs(models_dir, exist_ok=True)
 
     weight_path = os.path.join(models_dir, 'RealESRGAN_x4plus.pth')
-    if not os.path.isfile(weight_path):
-        print("Downloading RealESRGAN_x4plus weights...")
-        url = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth"
+    url = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth"
+    if is_valid_checkpoint(weight_path, min_mb=60):
+        print(f"RealESRGAN weights already present at {weight_path}")
+    else:
+        if os.path.isfile(weight_path):
+            print("RealESRGAN weights corrupt — re-downloading...")
+            os.remove(weight_path)
+        else:
+            print("Downloading RealESRGAN_x4plus weights...")
         urllib.request.urlretrieve(url, weight_path)
         print(f"Saved to {weight_path}")
-    else:
-        print(f"RealESRGAN weights already present at {weight_path}")
 
     # Install the realesrgan Python package if not already available
     env_name = cfg.main_env
@@ -239,6 +307,8 @@ if __name__ == '__main__':
 
     # Create main runtime env first (other setup steps depend on it)
     setup_main_env(root_dir)
+    setup_digit_env(root_dir)
+    setup_agg_env(root_dir)
 
     # common for both datasets
     setup_sam(root_dir)
