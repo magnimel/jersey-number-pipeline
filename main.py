@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 import torch
 import legibility_classifier as lc
 import numpy as np
@@ -601,24 +602,18 @@ def soccer_net_pipeline(args):
     #7.5 run digit classifier on crops (--improved only)
     if args.pipeline.get('digit_classifier', False) and success:
         print("Running digit classifier")
-        try:
-            _dc_crops_dir = os.path.join(config.dataset['SoccerNet']['working_dir'],
-                                         config.dataset['SoccerNet'][args.part]['crops_sr_folder'], 'imgs')
-            _dc_ckpt = config.dataset['SoccerNet']['digit_classifier_model']
-            _dc_venv = os.path.join(os.getcwd(), 'digit_classifier', '.venv', 'bin', 'python')
-            Path(os.path.dirname(digit_predictions_file)).mkdir(parents=True, exist_ok=True)
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            command = (f"{_dc_venv} digit_classifier/infer.py"
-                       f" --crops_dir {_dc_crops_dir}"
-                       f" --checkpoint {_dc_ckpt}"
-                       f" --output_json {digit_predictions_file}"
-                       f" --batch_size 32")
-            success = os.system(command) == 0
-            if not success:
-                print("[DigitClassifier] Failed — will pass p_2digit=0.5 (uniform) to aggregator.")
-                success = True  # non-fatal
-        except Exception as e:
-            print(f"[DigitClassifier] Error: {e} — continuing without digit predictions.")
+        _dc_crops_dir = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                     config.dataset['SoccerNet'][args.part]['crops_sr_folder'], 'imgs')
+        _dc_ckpt = config.dataset['SoccerNet']['digit_classifier_model']
+        Path(os.path.dirname(digit_predictions_file)).mkdir(parents=True, exist_ok=True)
+        command = (f"{sys.executable} digit_classifier/infer.py"
+                   f" --crops_dir {_dc_crops_dir}"
+                   f" --checkpoint {_dc_ckpt}"
+                   f" --output_json {digit_predictions_file}"
+                   f" --batch_size 32")
+        success = os.system(command) == 0
+        if not success:
+            print("[DigitClassifier] Failed — cannot continue without digit predictions (aggregation model requires them).")
         print("Done digit classifier")
 
     #str_result_file = os.path.join(config.dataset['SoccerNet']['working_dir'], "val_jersey_id_predictions.json")

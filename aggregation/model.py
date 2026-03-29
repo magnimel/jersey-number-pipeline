@@ -10,6 +10,8 @@ Architecture (from docs/finetune_and_aggregation.md):
 Toggle use_digit_classifier=False to run without the MoviNet 1-vs-2 digit signal.
 """
 
+from typing import Optional
+
 import torch
 import torch.nn as nn
 
@@ -50,7 +52,7 @@ class TrackletAggregator(nn.Module):
         self,
         logits_seq: torch.Tensor,   # (B, T_max, 33) padded
         lengths: torch.Tensor,       # (B,) actual T per sample
-        p_2digit: torch.Tensor | None = None,  # (B, 1) or None
+        p_2digit: Optional[torch.Tensor] = None,  # (B, 1) or None
     ) -> torch.Tensor:               # (B, 100)
         B, T, _ = logits_seq.shape
 
