@@ -139,17 +139,7 @@ def run_inference_no_gt(model, str_results_path, device, use_digit_classifier, b
     with open(str_results_path) as f:
         str_results = json.load(f)
 
-    def _is_valid_label(s):
-        if not s or s == '-' or len(s) > 2:
-            return False
-        try:
-            n = int(s)
-            return 0 < n < 100
-        except (ValueError, TypeError):
-            return False
-
     tracklet_crops = defaultdict(list)
-    tracklet_has_valid_label = defaultdict(bool)
     for fname, data in str_results.items():
         raw = data.get("logits")
         if raw is None:
@@ -157,12 +147,6 @@ def run_inference_no_gt(model, str_results_path, device, use_digit_classifier, b
         tracklet = fname.split("_")[0]
         logits = torch.tensor(raw, dtype=torch.float32).flatten()
         tracklet_crops[tracklet].append((fname, logits))
-        if _is_valid_label(data.get("label")):
-            tracklet_has_valid_label[tracklet] = True
-
-    # Skip tracklets where no crop has a valid STR label — same behaviour as heuristic voting
-    tracklet_crops = {t: crops for t, crops in tracklet_crops.items()
-                      if tracklet_has_valid_label[t]}
 
     # Sort crops within each tracklet for deterministic ordering
     for t in tracklet_crops:
