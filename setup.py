@@ -225,7 +225,8 @@ def setup_digit_env(root_dir):
     os.system(f"conda run --live-stream -n {env_name} conda install --name {env_name} pip -y")
     pkgs = [
         "torch torchvision --index-url https://download.pytorch.org/whl/cu121",
-        "movinets Pillow numpy",
+        "https://github.com/Atze00/MoViNet-pytorch/archive/refs/heads/main.zip",
+        "Pillow numpy",
     ]
     for pkg in pkgs:
         os.system(f"conda run --live-stream -n {env_name} pip install {pkg}")

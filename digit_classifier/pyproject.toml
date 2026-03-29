@@ -6,7 +6,7 @@ dependencies = [
     "torch",
     "torchvision",
     "pytorch-lightning",
-    "movinets",
+    "movinets @ https://github.com/Atze00/MoViNet-pytorch/archive/refs/heads/main.zip",
     "wandb",
     "python-dotenv",
     "scikit-learn",
