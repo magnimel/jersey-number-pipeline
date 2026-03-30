@@ -1,0 +1,45 @@
+Output dir: /scratch/fahdsdk/jersey-agg-checkpoints/agg_bs32_lr2.3e-03_wd1.5e-03_cwT
+/local/scratch/fahdsdk.11144840.0/jersey-number-pipeline/aggregation/.venv/lib/python3.12/site-packages/lightning_fabric/plugins/environments/slurm.py:204: The `srun` command is available on your system but is not used. HINT: If your intention is to run Lightning on SLURM, prepend your python command with `srun` like so: srun python aggregation/train.py training.batch_size=32 training ...
+GPU available: False, used: False
+TPU available: False, using: 0 TPU cores
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+
+  | Name      | Type               | Params | Mode  | FLOPs
+-----------------------------------------------------------------
+0 | model     | TrackletAggregator | 246 K  | train | 0
+1 | criterion | CrossEntropyLoss   | 0      | train | 0
+-----------------------------------------------------------------
+246 K     Trainable params
+0         Non-trainable params
+246 K     Total params
+0.988     Total estimated model params size (MB)
+12        Modules in train mode
+0         Modules in eval mode
+0         Total Flops
+Epoch 18: 100%|██████████| 24/24 [00:16<00:00,  1.44it/s, v_num=ndkm, val/loss=0.711, val/acc=0.924, train/loss=0.0847, train/acc=0.984]
+/local/scratch/fahdsdk.11144840.0/jersey-number-pipeline/aggregation/.venv/lib/python3.12/site-packages/pytorch_lightning/utilities/_pytree.py:21: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
+/local/scratch/fahdsdk.11144840.0/jersey-number-pipeline/aggregation/.venv/lib/python3.12/site-packages/torch/utils/data/dataloader.py:1118: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  super().__init__(loader)
+                                                                      
+Metric val/acc improved. New best score: 0.603
+Metric val/acc improved by 0.272 >= min_delta = 0.0. New best score: 0.875
+Metric val/acc improved by 0.033 >= min_delta = 0.0. New best score: 0.908
+Metric val/acc improved by 0.005 >= min_delta = 0.0. New best score: 0.913
+Metric val/acc improved by 0.005 >= min_delta = 0.0. New best score: 0.918
+Metric val/acc improved by 0.005 >= min_delta = 0.0. New best score: 0.924
+Metric val/acc improved by 0.011 >= min_delta = 0.0. New best score: 0.935
+Monitored metric val/acc did not improve in the last 5 records. Best score: 0.935. Signaling Trainer to stop.
+Training done. Best val/acc=0.9348
+Best checkpoint: /scratch/fahdsdk/jersey-agg-checkpoints/agg_bs32_lr2.3e-03_wd1.5e-03_cwT/epoch013_valacc0.9348.ckpt
+Update configuration.py: dataset['SoccerNet']['aggregation_model'] = '/scratch/fahdsdk/jersey-agg-checkpoints/agg_bs32_lr2.3e-03_wd1.5e-03_cwT/epoch013_valacc0.9348.ckpt'
+
+Evaluating best checkpoint on test set...
+Restoring states from the checkpoint path at /scratch/fahdsdk/jersey-agg-checkpoints/agg_bs32_lr2.3e-03_wd1.5e-03_cwT/epoch013_valacc0.9348.ckpt
+Loaded model weights from the checkpoint at /scratch/fahdsdk/jersey-agg-checkpoints/agg_bs32_lr2.3e-03_wd1.5e-03_cwT/epoch013_valacc0.9348.ckpt
+Testing DataLoader 0: 100%|██████████| 24/24 [00:00<00:00, 24.03it/s]
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+       Test metric             DataLoader 0
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+        test/acc            0.8877284526824951
+        test/loss           1.3525418043136597
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

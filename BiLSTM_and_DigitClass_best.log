@@ -1,0 +1,70 @@
+Output dir: /scratch/fahdsdk/jersey-agg-checkpoints-final/agg_bs64_lr1.6e-03_wd1.1e-05_cwF_dc
+/local/scratch/fahdsdk.11153528.0/jersey-number-pipeline/aggregation/.venv/lib/python3.12/site-packages/lightning_fabric/plugins/environments/slurm.py:204: The `srun` command is available on your system but is not used. HINT: If your intention is to run Lightning on SLURM, prepend your python command with `srun` like so: srun python aggregation/train.py model.use_digit_classifier=True ...
+GPU available: False, used: False
+TPU available: False, using: 0 TPU cores
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+
+  | Name      | Type               | Params | Mode  | FLOPs
+-----------------------------------------------------------------
+0 | model     | TrackletAggregator | 247 K  | train | 0
+1 | criterion | CrossEntropyLoss   | 0      | train | 0
+-----------------------------------------------------------------
+247 K     Trainable params
+0         Non-trainable params
+247 K     Total params
+0.988     Total estimated model params size (MB)
+12        Modules in train mode
+0         Modules in eval mode
+0         Total Flops
+Epoch 17: 100%|██████████| 11/11 [00:14<00:00,  0.76it/s, v_num=3pkj, val/loss=0.317, val/acc=0.935, train/loss=0.0891, train/acc=0.982]
+/local/scratch/fahdsdk.11153528.0/jersey-number-pipeline/aggregation/.venv/lib/python3.12/site-packages/pytorch_lightning/utilities/_pytree.py:21: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
+/local/scratch/fahdsdk.11153528.0/jersey-number-pipeline/aggregation/.venv/lib/python3.12/site-packages/torch/utils/data/dataloader.py:1118: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  super().__init__(loader)
+                                                                      
+Metric val/loss improved. New best score: 2.859
+Metric val/loss improved by 1.120 >= min_delta = 0.0. New best score: 1.739
+Metric val/loss improved by 0.661 >= min_delta = 0.0. New best score: 1.078
+Metric val/loss improved by 0.372 >= min_delta = 0.0. New best score: 0.706
+Metric val/loss improved by 0.220 >= min_delta = 0.0. New best score: 0.486
+Metric val/loss improved by 0.099 >= min_delta = 0.0. New best score: 0.387
+Metric val/loss improved by 0.047 >= min_delta = 0.0. New best score: 0.340
+Metric val/loss improved by 0.022 >= min_delta = 0.0. New best score: 0.318
+Metric val/loss improved by 0.027 >= min_delta = 0.0. New best score: 0.291
+Metric val/loss improved by 0.009 >= min_delta = 0.0. New best score: 0.282
+Monitored metric val/loss did not improve in the last 5 records. Best score: 0.282. Signaling Trainer to stop.
+Training done. Best val/loss=0.2815
+Best checkpoint: /scratch/fahdsdk/jersey-agg-checkpoints-final/agg_bs64_lr1.6e-03_wd1.1e-05_cwF_dc/epoch012_valloss0.2815.ckpt
+Update configuration.py: dataset['SoccerNet']['aggregation_model'] = '/scratch/fahdsdk/jersey-agg-checkpoints-final/agg_bs64_lr1.6e-03_wd1.1e-05_cwF_dc/epoch012_valloss0.2815.ckpt'
+
+Evaluating epoch012_valloss0.2815.ckpt (val/loss=0.2815)...
+Restoring states from the checkpoint path at /scratch/fahdsdk/jersey-agg-checkpoints-final/agg_bs64_lr1.6e-03_wd1.1e-05_cwF_dc/epoch012_valloss0.2815.ckpt
+Loaded model weights from the checkpoint at /scratch/fahdsdk/jersey-agg-checkpoints-final/agg_bs64_lr1.6e-03_wd1.1e-05_cwF_dc/epoch012_valloss0.2815.ckpt
+Testing DataLoader 0: 100%|██████████| 12/12 [00:00<00:00, 15.60it/s]
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+       Test metric             DataLoader 0
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+        test/acc            0.8942558765411377
+        test/loss           0.6496458649635315
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+Evaluating epoch016_valloss0.2856.ckpt (val/loss=0.2856)...
+Restoring states from the checkpoint path at /scratch/fahdsdk/jersey-agg-checkpoints-final/agg_bs64_lr1.6e-03_wd1.1e-05_cwF_dc/epoch016_valloss0.2856.ckpt
+Loaded model weights from the checkpoint at /scratch/fahdsdk/jersey-agg-checkpoints-final/agg_bs64_lr1.6e-03_wd1.1e-05_cwF_dc/epoch016_valloss0.2856.ckpt
+Testing DataLoader 0: 100%|██████████| 12/12 [00:00<00:00, 15.42it/s]
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+       Test metric             DataLoader 0
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+        test/acc            0.8798955678939819
+        test/loss           0.6738637685775757
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+Evaluating epoch013_valloss0.2862.ckpt (val/loss=0.2862)...
+Restoring states from the checkpoint path at /scratch/fahdsdk/jersey-agg-checkpoints-final/agg_bs64_lr1.6e-03_wd1.1e-05_cwF_dc/epoch013_valloss0.2862.ckpt
+Loaded model weights from the checkpoint at /scratch/fahdsdk/jersey-agg-checkpoints-final/agg_bs64_lr1.6e-03_wd1.1e-05_cwF_dc/epoch013_valloss0.2862.ckpt
+Testing DataLoader 0: 100%|██████████| 12/12 [00:00<00:00, 15.63it/s]
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+       Test metric             DataLoader 0
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+        test/acc            0.9007833003997803
+        test/loss           0.6627277731895447
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

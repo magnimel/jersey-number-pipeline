@@ -1,0 +1,53 @@
+  Loaded: 1-digit=316, 2-digit=611, total=927
+  Loaded: 1-digit=253, 2-digit=488, total=741
+  Loaded: 1-digit=63, 2-digit=123, total=186
+  Loaded: 1-digit=172, 2-digit=594, total=766
+  pos_weight (n0/n1 = 253/488): 0.518
+Output dir: /scratch/fahdsdk/jersey-digit-checkpoints/digit_a3_bs16_nf256_lr4.3e-04_wd5.6e-03
+/local/scratch/fahdsdk.11145777.0/jersey-number-pipeline/digit_classifier/.venv/lib/python3.12/site-packages/lightning_fabric/plugins/environments/slurm.py:204: The `srun` command is available on your system but is not used. HINT: If your intention is to run Lightning on SLURM, prepend your python command with `srun` like so: srun python digit_classifier/train.py --batch_size=16 --early_st ...
+Using bfloat16 Automatic Mixed Precision (AMP)
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+/local/scratch/fahdsdk.11145777.0/jersey-number-pipeline/digit_classifier/.venv/lib/python3.12/site-packages/pytorch_lightning/utilities/model_summary/model_summary.py:242: Precision bf16-mixed is not supported by the model summary.  Estimated model size in MB will not be accurate. Using 32 bits instead.
+
+  | Name  | Type              | Params | Mode  | FLOPs
+------------------------------------------------------------
+0 | model | DigitCountMoviNet | 6.2 M  | train | 0
+------------------------------------------------------------
+1.5 M     Trainable params
+4.6 M     Non-trainable params
+6.2 M     Total params
+24.681    Total estimated model params size (MB)
+1050      Modules in train mode
+0         Modules in eval mode
+0         Total Flops
+[34m[1mwandb[0m: [33mWARNING[0m Config item 'model_id' was locked by 'sweep' (ignored update).
+[34m[1mwandb[0m: [33mWARNING[0m Config item 'lr' was locked by 'sweep' (ignored update).
+[34m[1mwandb[0m: [33mWARNING[0m Config item 'weight_decay' was locked by 'sweep' (ignored update).
+Epoch 16: 100%|████████████████████████████████████████| 47/47 [05:05<00:00,  0.15it/s, v_num=zvlg, val/loss=0.188, val/acc=0.849, train/loss=0.118, train/acc=0.934]
+/local/scratch/fahdsdk.11145777.0/jersey-number-pipeline/digit_classifier/.venv/lib/python3.12/site-packages/pytorch_lightning/utilities/_pytree.py:21: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
+                                                                                                                                                                     
+Training done. Best val/acc=0.9086
+Best checkpoint: /scratch/fahdsdk/jersey-digit-checkpoints/digit_a3_bs16_nf256_lr4.3e-04_wd5.6e-03/epoch011_valacc0.9086.ckpt
+Restoring states from the checkpoint path at /scratch/fahdsdk/jersey-digit-checkpoints/digit_a3_bs16_nf256_lr4.3e-04_wd5.6e-03/epoch011_valacc0.9086.ckpt
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+[34m[1mwandb[0m: [33mWARNING[0m Config item 'model_id' was locked by 'sweep' (ignored update).
+[34m[1mwandb[0m: [33mWARNING[0m Config item 'lr' was locked by 'sweep' (ignored update).
+[34m[1mwandb[0m: [33mWARNING[0m Config item 'weight_decay' was locked by 'sweep' (ignored update).
+Loaded model weights from the checkpoint at /scratch/fahdsdk/jersey-digit-checkpoints/digit_a3_bs16_nf256_lr4.3e-04_wd5.6e-03/epoch011_valacc0.9086.ckpt
+Testing DataLoader 0: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████| 48/48 [03:49<00:00,  0.21it/s]
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+       Test metric             DataLoader 0
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+        test/acc            0.8642297387123108
+        test/loss           0.19961093366146088
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Loaded: 1-digit=316, 2-digit=611, total=927
+  Saved 927 train predictions → /scratch/fahdsdk/jersey-digit-checkpoints/digit_a3_bs16_nf256_lr4.3e-04_wd5.6e-03/digit_predictions_train.json
+[34m[1mwandb[0m: [33mWARNING[0m Saving files without folders. If you want to preserve subdirectories pass base_path to wandb.save, i.e. wandb.save("/mnt/folder/file.h5", base_path="/mnt")
+[34m[1mwandb[0m: [33mWARNING[0m Symlinked 1 file into the W&B run directory; call wandb.save again to sync new files.
+  Loaded: 1-digit=172, 2-digit=594, total=766
+  Saved 766 test predictions → /scratch/fahdsdk/jersey-digit-checkpoints/digit_a3_bs16_nf256_lr4.3e-04_wd5.6e-03/digit_predictions_test.json
+[34m[1mwandb[0m: [33mWARNING[0m Symlinked 1 file into the W&B run directory; call wandb.save again to sync new files.
