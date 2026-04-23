@@ -67,22 +67,30 @@ def setup_reid(root):
     repo_name = "centroids-reid"
     src_url   = "https://github.com/mikwieczorek/centroids-reid.git"
     rep_path  = "./reid"
+    models_folder_path = os.path.join(rep_path, repo_name, "models")
 
     if not repo_name in os.listdir(rep_path):
         # clone source repo
         os.system(f"git clone --recurse-submodules {src_url} {os.path.join(rep_path, repo_name)}")
 
         # create the models folder inside repo, weights will be added to that folder later on
-        models_folder_path = os.path.join(rep_path, repo_name, "models")
         os.system(f"mkdir {models_folder_path}")
+    else:
+        os.makedirs(models_folder_path, exist_ok=True)
 
-        url = "https://drive.google.com/uc?export=download&id=1w9yzdP_5oJppGIM4gs3cETyLujanoHK8&confirm=t&uuid=fed3cb8a-1fad-40bd-8922-c41ededc93ae&at=ALgDtsxiC0WTza4g47gqC5VPyWg4:1679009047787"
-        save_path = os.path.join(models_folder_path, "dukemtmcreid_resnet50_256_128_epoch_120.ckpt")
-        urllib.request.urlretrieve(url, save_path)
-
-        url = "https://drive.google.com/uc?export=download&id=1ZFywKEytpyNocUQd2APh2XqTe8X0HMom&confirm=t&uuid=450bb8b7-b3d0-4465-b0c9-bb6f066b205e&at=ALgDtswylGfYgY71u8ZmWx4CfhJX:1679008688985"
-        save_path = os.path.join(models_folder_path, "market1501_resnet50_256_128_epoch_120.ckpt")
-        urllib.request.urlretrieve(url, save_path)
+    reid_weights = [
+        (
+            "https://drive.google.com/uc?id=1w9yzdP_5oJppGIM4gs3cETyLujanoHK8",
+            "dukemtmcreid_resnet50_256_128_epoch_120.ckpt",
+        ),
+        (
+            "https://drive.google.com/uc?id=1ZFywKEytpyNocUQd2APh2XqTe8X0HMom",
+            "market1501_resnet50_256_128_epoch_120.ckpt",
+        ),
+    ]
+    for url, filename in reid_weights:
+        save_path = os.path.join(models_folder_path, filename)
+        gdown_validated(url, save_path, filename, min_mb=10)
 
     if not env_name in get_conda_envs():
         make_conda_env(env_name, libs="python=3.8")
