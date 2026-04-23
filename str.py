@@ -18,7 +18,8 @@ import argparse
 import string
 import sys
 from dataclasses import dataclass
-from typing import List
+from itertools import groupby
+from typing import List, Tuple
 
 ROOT = './str/parseq/'
 sys.path.append(str(ROOT))  # add ROOT to PATH
@@ -37,6 +38,10 @@ from PIL import Image
 import os
 import json
 import csv
+import time
+
+
+NUMERIC_TOKENS = 'E0123456789'
 
 @dataclass
 class Result:
@@ -71,13 +76,95 @@ def print_results_table(results: List[Result], file=None):
           f'| {c.confidence:>10.2f} | {c.label_length:>12.2f} |', file=file)
 
 
+def _is_ctc_model(model) -> bool:
+    return hasattr(model, 'blank_id')
+
+
+def _canonical_numeric_logits(label: str, confidence: List[float]) -> Tuple[list, list]:
+    """Return PARSeq-compatible [3, 11] numeric probabilities/logits.
+
+    The downstream heuristic only requires label/confidence, but the improved
+    aggregator expects a fixed 33-value logits vector. CRNN is CTC-based and
+    does not naturally emit that shape, so we provide a deterministic numeric
+    projection for compatibility. The learned PARSeq aggregator should not be
+    used to compare CRNN unless it is retrained on this representation.
+    """
+    eps = 1e-6
+    rows = []
+    for pos in range(3):
+        row = [eps] * len(NUMERIC_TOKENS)
+        if pos < len(label) and label[pos].isdigit():
+            idx = NUMERIC_TOKENS.index(label[pos])
+            prob = max(min(float(confidence[pos]), 1.0 - eps), eps)
+            row[idx] = prob
+            remainder = max(1.0 - prob, eps)
+            row[0] = remainder
+        else:
+            row[0] = 1.0 - eps
+        total = sum(row)
+        rows.append([x / total for x in row])
+    logits = [[float(torch.log(torch.tensor(x)).item()) for x in row] for row in rows]
+    return rows, logits
+
+
+def _decode_ctc_numeric(model, probs_full: torch.Tensor, max_digits: int = 2) -> Tuple[List[str], List[List[float]], list, list]:
+    """Decode CTC output while retaining only jersey-number digits."""
+    preds = []
+    confidences = []
+    raw_rows = []
+    logit_rows = []
+
+    itos = model.tokenizer._itos
+    blank_id = model.blank_id
+    for dist in probs_full:
+        step_probs, step_ids = dist.max(-1)
+        collapsed = []
+        for token_id, grouped in groupby(zip(step_ids.tolist(), step_probs.tolist()), key=lambda x: x[0]):
+            grouped_probs = [prob for _, prob in grouped]
+            collapsed.append((token_id, max(grouped_probs)))
+
+        label_chars = []
+        label_conf = []
+        for token_id, prob in collapsed:
+            if token_id == blank_id:
+                continue
+            token = itos[token_id]
+            if token in string.digits:
+                label_chars.append(token)
+                label_conf.append(float(prob))
+                if len(label_chars) == max_digits:
+                    break
+
+        label = ''.join(label_chars)
+        # helpers.process_jersey_id_predictions multiplies confidence[:-1],
+        # matching PARSeq's digit probabilities followed by EOS confidence.
+        confidence = label_conf + [1.0]
+        raw, logits = _canonical_numeric_logits(label, confidence)
+        preds.append(label)
+        confidences.append(confidence)
+        raw_rows.append(raw)
+        logit_rows.append(logits)
+
+    return preds, confidences, logit_rows, raw_rows
+
+
+def _decode_ce_numeric(model, logits: torch.Tensor, max_digits: int = 2) -> Tuple[List[str], list, list, list]:
+    """Decode PARSeq/TRBA-style outputs using only EOS + digit classes."""
+    probs_full = logits[:, :max_digits + 1, :len(NUMERIC_TOKENS)].softmax(-1)
+    preds, probs = model.tokenizer.decode(probs_full)
+    preds = [''.join(ch for ch in pred if ch in string.digits)[:max_digits] for pred in preds]
+    confidences = [prob.cpu().detach().numpy().squeeze().tolist() for prob in probs]
+    return preds, confidences, logits[:, :max_digits + 1, :len(NUMERIC_TOKENS)].cpu().detach().numpy().tolist(), probs_full.cpu().detach().numpy().tolist()
+
+
 def _infer_batch(model, images: list, device):
     """Run a single forward pass and return (preds, probs, logits_np, probs_full_np)."""
     batch = torch.stack(images).to(device)
     logits = model.forward(batch)
-    probs_full = logits[:, :3, :11].softmax(-1)
-    preds, probs = model.tokenizer.decode(probs_full)
-    return preds, probs, logits[:, :3, :11].cpu().detach().numpy().tolist(), probs_full.cpu().detach().numpy().tolist()
+    if _is_ctc_model(model):
+        probs_full = logits.softmax(-1)
+        return _decode_ctc_numeric(model, probs_full)
+    return _decode_ce_numeric(model, logits)
 
 
 def _calibrate_str_batch_size(model, sample_images: list, max_bs: int) -> int:
@@ -125,7 +212,7 @@ def _calibrate_str_batch_size(model, sample_images: list, max_bs: int) -> int:
     return best_bs
 
 
-def run_inference(model, data_root, result_file, img_size, batch_size=512):
+def run_inference(model, data_root, result_file, img_size, batch_size=512, metrics_file=None):
     file_dir = os.path.join(data_root, 'imgs')
     filenames = sorted(os.listdir(file_dir))
     transform = SceneTextDataModule.get_transform(img_size)
@@ -144,6 +231,8 @@ def run_inference(model, data_root, result_file, img_size, batch_size=512):
 
     results = {}
     i = 0
+    measured_images = 0
+    measured_seconds = 0.0
     pbar = tqdm(total=len(filenames))
     while i < len(filenames):
         batch_filenames = filenames[i:i + current_bs]
@@ -151,9 +240,16 @@ def run_inference(model, data_root, result_file, img_size, batch_size=512):
         for filename in batch_filenames:
             images.append(transform(Image.open(os.path.join(file_dir, filename)).convert('RGB')))
         try:
+            if str(device) != 'cpu':
+                torch.cuda.synchronize()
+            t0 = time.perf_counter()
             preds, probs, logits_np, probs_full_np = _infer_batch(model, images, device)
+            if str(device) != 'cpu':
+                torch.cuda.synchronize()
+            measured_seconds += time.perf_counter() - t0
+            measured_images += len(batch_filenames)
             for j, filename in enumerate(batch_filenames):
-                confidence = probs[j].cpu().detach().numpy().squeeze().tolist()
+                confidence = probs[j]
                 results[filename] = {'label': preds[j], 'confidence': confidence,
                                      'raw': probs_full_np[j], 'logits': logits_np[j]}
             i += len(batch_filenames)
@@ -170,6 +266,21 @@ def run_inference(model, data_root, result_file, img_size, batch_size=512):
     pbar.close()
     with open(result_file, 'w') as f:
         json.dump(results, f)
+    if measured_images:
+        metrics = {
+            'num_images': measured_images,
+            'total_inference_seconds': measured_seconds,
+            'avg_inference_seconds_per_image': measured_seconds / measured_images,
+            'throughput_images_per_second': measured_images / measured_seconds if measured_seconds > 0 else None,
+            'batch_size': current_bs,
+            'device': str(device),
+        }
+        print(f"[STR] Inference time: {metrics['avg_inference_seconds_per_image']:.6f}s/image "
+              f"({metrics['throughput_images_per_second']:.2f} img/s)")
+        if metrics_file:
+            os.makedirs(os.path.dirname(metrics_file) or '.', exist_ok=True)
+            with open(metrics_file, 'w') as f:
+                json.dump(metrics, f, indent=2)
 
 
 #================================ temperature scaling ======================================#
@@ -326,6 +437,8 @@ def main():
     parser.add_argument('--tune_temperature', action='store_true', default=False,
                         help='Find best t-scale')
     parser.add_argument('--result_file', default='outputs/preds.json')
+    parser.add_argument('--metrics_file', default=None,
+                        help='Optional JSON path for STR inference timing metrics')
     args, unknown = parser.parse_known_args()
     kwargs = parse_model_args(unknown)
 
@@ -341,7 +454,8 @@ def main():
     hp = model.hparams
 
     if args.inference:
-        run_inference(model, args.data_root, args.result_file, hp.img_size, batch_size=args.batch_size)
+        run_inference(model, args.data_root, args.result_file, hp.img_size,
+                      batch_size=args.batch_size, metrics_file=args.metrics_file)
         exit()
     if args.tune_temperature:
         set_temperature(model, args.data_root, hp.img_size)

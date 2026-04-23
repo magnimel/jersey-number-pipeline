@@ -41,20 +41,51 @@ def evaluate(prediction_path, ground_truth_path):
     # 4. Results
     accuracy = correct / total if total > 0 else 0
     
-    print("-" * 30)
-    print("EVALUATION RESULTS")
-    print("-" * 30)
-    print(f"Total Samples (GT): {total}")
-    print(f"Predictions Provided: {total - missing}")
-    print(f"Correct Predictions: {correct}")
-    print(f"Missing Predictions: {missing}")
-    print("-" * 30)
-    print(f"FINAL ACCURACY: {accuracy:.2%}")
-    print("-" * 30)
+    metrics = {
+        "total_samples": total,
+        "predictions_provided": total - missing,
+        "correct_predictions": correct,
+        "missing_predictions": missing,
+        "accuracy": accuracy,
+    }
+    return metrics
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate Jersey Number Recognition")
     parser.add_argument("--pred", required=True, help="Path to your predictions JSON file")
     parser.add_argument("--gt", required=True, help="Path to the test_gt.json file")
+    parser.add_argument("--timing", default=None,
+                        help="Optional STR timing JSON produced by str.py --metrics_file")
+    parser.add_argument("--output", default=None,
+                        help="Optional path to write combined metrics JSON")
     args = parser.parse_args()
-    evaluate(args.pred, args.gt)
+    metrics = evaluate(args.pred, args.gt)
+    if args.timing:
+        try:
+            with open(args.timing, 'r') as f:
+                metrics["timing"] = json.load(f)
+        except FileNotFoundError:
+            print(f"Warning: timing file not found at {args.timing}")
+
+    print("-" * 30)
+    print("EVALUATION RESULTS")
+    print("-" * 30)
+    print(f"Total Samples (GT): {metrics['total_samples']}")
+    print(f"Predictions Provided: {metrics['predictions_provided']}")
+    print(f"Correct Predictions: {metrics['correct_predictions']}")
+    print(f"Missing Predictions: {metrics['missing_predictions']}")
+    print("-" * 30)
+    print(f"FINAL ACCURACY: {metrics['accuracy']:.2%}")
+    if "timing" in metrics:
+        timing = metrics["timing"]
+        avg = timing.get("avg_inference_seconds_per_image")
+        throughput = timing.get("throughput_images_per_second")
+        if avg is not None:
+            print(f"AVG STR INFERENCE: {avg:.6f}s/image")
+        if throughput is not None:
+            print(f"STR THROUGHPUT: {throughput:.2f} images/s")
+    print("-" * 30)
+
+    if args.output:
+        with open(args.output, 'w') as f:
+            json.dump(metrics, f, indent=2)

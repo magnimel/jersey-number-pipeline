@@ -231,10 +231,9 @@ def is_valid_number(string):
         num = int(string)
     except:
         return False
-    if num > 0 and num < 100:
+    if num >= 0 and num < 100:
         return True
-    else:
-        False
+    return False
 
 # add bias - give twice the weight to double digit predictions
 def get_bias(value):
@@ -820,5 +819,4 @@ if __name__ == '__main__':
         generate_different_split(args.source, args.target)
     else:
         generate_crops_based(args.source, args.target, splits)
-
 

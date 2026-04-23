@@ -120,6 +120,10 @@ dataset = {'SoccerNet':
                  'legibility_model_url':  "https://drive.google.com/uc?id=1QDAqZvIbf0UPP9disdBsqcdIB0e84ZWa",
                  'pose_model_url': 'https://drive.google.com/uc?id=1gHOcfVvmwVDuJsn9c-a-v39vIqFpfbH0',
                  'str_model': 'models/parseq_epoch=24-step=2575-val_accuracy=95.6044-val_NED=96.3255.ckpt',
+                 # Alternative STR backend for individual_task_beichen. This uses
+                 # STRHub's CRNN implementation and downloads public pretrained
+                 # weights from the PARSeq/STRHub release on first use.
+                 'crnn_str_model': 'pretrained=crnn',
                  # Path to a trained TrackletAggregator checkpoint; set after training.
                  # Leave as None to use the default heuristic voting stage.
                  'aggregation_model': None,
@@ -148,6 +152,7 @@ dataset = {'SoccerNet':
                  'legibility_model':  'models/legibility_resnet34_hockey_20240201.pth',
                  'legibility_model_url':  "https://drive.google.com/uc?id=1wVmogmky9s54cn3TrO5JIcaO3R1jWpI-",
                  'str_model': 'models/parseq_epoch=3-step=95-val_accuracy=98.7903-val_NED=99.3952.ckpt',
+                 'crnn_str_model': 'pretrained=crnn',
                  'str_model_url': "https://drive.google.com/uc?id=1mhGUeKUIW0-ieuCrOvfNCPgPmu1nODM7",
             }
         }

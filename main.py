@@ -385,25 +385,29 @@ def consolidated_results(image_dir, dict, illegible_path, soccer_ball_list=None)
     return dict
 
 def train_parseq(args):
+    str_backend = getattr(args, 'str_backend', 'parseq')
+    pretrained = str_backend
+    epochs = getattr(args, 'str_epochs', 25)
+    batch_size = getattr(args, 'str_train_batch_size', 128)
     if args.dataset == 'Hockey':
-        print("Train PARSeq for Hockey")
+        print(f"Train {str_backend.upper()} STR for Hockey")
         parseq_dir = config.str_home
         current_dir = os.getcwd()
         os.chdir(parseq_dir)
         data_root = os.path.join(current_dir, config.dataset['Hockey']['root_dir'], config.dataset['Hockey']['numbers_data'])
-        command = f"conda run -n {config.str_env} --no-capture-output python3 train.py +experiment=parseq dataset=real data.root_dir={data_root} trainer.max_epochs=25 " \
-                  f"pretrained=parseq trainer.devices=1 trainer.val_check_interval=1 data.batch_size=128 data.max_label_length=2"
+        command = f"conda run -n {config.str_env} --no-capture-output python3 train.py +experiment={str_backend} dataset=real data.root_dir={data_root} trainer.max_epochs={epochs} " \
+                  f"pretrained={pretrained} trainer.devices=1 trainer.val_check_interval=1 data.batch_size={batch_size} data.max_label_length=2 model.max_label_length=2"
         success = os.system(command) == 0
         os.chdir(current_dir)
         print("Done training")
     else:
-        print("Train PARSeq for Soccer")
+        print(f"Train {str_backend.upper()} STR for Soccer")
         parseq_dir = config.str_home
         current_dir = os.getcwd()
         os.chdir(parseq_dir)
         data_root = os.path.join(current_dir, config.dataset['SoccerNet']['root_dir'], config.dataset['SoccerNet']['numbers_data'])
-        command = f"conda run -n {config.str_env} --no-capture-output python3 train.py +experiment=parseq dataset=real data.root_dir={data_root} trainer.max_epochs=25 " \
-                  f"pretrained=parseq trainer.devices=1 trainer.val_check_interval=1 data.batch_size=128 data.max_label_length=2"
+        command = f"conda run -n {config.str_env} --no-capture-output python3 train.py +experiment={str_backend} dataset=real data.root_dir={data_root} trainer.max_epochs={epochs} " \
+                  f"pretrained={pretrained} trainer.devices=1 trainer.val_check_interval=1 data.batch_size={batch_size} data.max_label_length=2 model.max_label_length=2"
         success = os.system(command) == 0
         os.chdir(current_dir)
         print("Done training")
@@ -428,8 +432,10 @@ def hockey_pipeline(args):
         print("Predict numbers")
         current_dir = os.getcwd()
         data_root = os.path.join(current_dir, config.dataset['Hockey']['root_dir'], config.dataset['Hockey']['numbers_data'])
-        command = f"conda run -n {config.str_env} --no-capture-output python3 str.py  {config.dataset['Hockey']['str_model']}\
-            --data_root={data_root}"
+        ckpt_key = 'crnn_str_model' if getattr(args, 'str_backend', 'parseq') == 'crnn' else 'str_model'
+        checkpoint = getattr(args, 'str_checkpoint', None) or config.dataset['Hockey'][ckpt_key]
+        command = f"conda run -n {config.str_env} --no-capture-output python3 str.py  {checkpoint}\
+            --data_root={data_root} --batch_size={args.str_batch_size}"
         success = os.system(command) == 0
         print("Done predict numbers")
 
@@ -550,6 +556,8 @@ def soccer_net_pipeline(args):
 
     str_result_file = os.path.join(config.dataset['SoccerNet']['working_dir'],
                                    config.dataset['SoccerNet'][args.part]['jersey_id_result'])
+    str_metrics_file = os.path.join(config.dataset['SoccerNet']['working_dir'],
+                                    args.part, f"{args.str_backend}_str_metrics.json")
     digit_predictions_file = os.path.join(config.dataset['SoccerNet']['working_dir'],
                                           config.dataset['SoccerNet'][args.part]['digit_predictions'])
     #6.5 upscale crops with Real-ESRGAN before passing to STR
@@ -593,8 +601,12 @@ def soccer_net_pipeline(args):
             print(f"[STR] Using original crops from {image_dir}")
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        command = f"conda run -n {config.str_env} --no-capture-output python3 str.py  {config.dataset['SoccerNet']['str_model']}\
-            --data_root={image_dir} --batch_size=512 --inference --result_file {str_result_file} --device {device}"
+        ckpt_key = 'crnn_str_model' if getattr(args, 'str_backend', 'parseq') == 'crnn' else 'str_model'
+        checkpoint = getattr(args, 'str_checkpoint', None) or config.dataset['SoccerNet'][ckpt_key]
+        print(f"[STR] Backend={args.str_backend} checkpoint={checkpoint}")
+        Path(os.path.dirname(str_metrics_file)).mkdir(parents=True, exist_ok=True)
+        command = f"conda run -n {config.str_env} --no-capture-output python3 str.py  {checkpoint}\
+            --data_root={image_dir} --batch_size={args.str_batch_size} --inference --result_file {str_result_file} --metrics_file {str_metrics_file} --device {device}"
         success = os.system(command) == 0
         print("Done predict numbers")
 
@@ -625,7 +637,10 @@ def soccer_net_pipeline(args):
         if args.pipeline.get('improved'):
             agg_ckpt = config.dataset['SoccerNet'].get('aggregation_model_improved') or agg_ckpt
 
-        if args.pipeline.get('aggregation') and agg_ckpt and os.path.exists(agg_ckpt):
+        if args.pipeline.get('aggregation') and getattr(args, 'str_backend', 'parseq') == 'crnn':
+            print("[Aggregation] CRNN selected; using heuristic voting because the LSTM aggregator was trained on PARSeq logits.")
+            results_dict, analysis_results = helpers.process_jersey_id_predictions(str_result_file, useBias=True)
+        elif args.pipeline.get('aggregation') and agg_ckpt and os.path.exists(agg_ckpt):
             # 8a. Use trained BiLSTM aggregation model
             print(f"[Aggregation] Running TrackletAggregator from {agg_ckpt}")
             agg_result_file = os.path.join(config.dataset['SoccerNet']['working_dir'],
@@ -695,6 +710,16 @@ if __name__ == '__main__':
     parser.add_argument('--aggregation_model', default=None,
                         help="Path to a TrackletAggregator checkpoint (.pt). "
                              "If provided, replaces the heuristic voting stage with the BiLSTM model.")
+    parser.add_argument('--str_backend', choices=['parseq', 'crnn'], default='parseq',
+                        help="STR backend to train/run. 'crnn' uses STRHub CRNN pretrained weights by default.")
+    parser.add_argument('--str_checkpoint', default=None,
+                        help="Override STR checkpoint, e.g. pretrained=crnn or a fine-tuned .ckpt path.")
+    parser.add_argument('--str_batch_size', type=int, default=512,
+                        help="Batch size for STR inference.")
+    parser.add_argument('--str_epochs', type=int, default=25,
+                        help="Epochs for --train_str.")
+    parser.add_argument('--str_train_batch_size', type=int, default=128,
+                        help="Batch size for --train_str.")
     args = parser.parse_args()
 
     # --improved implies --esrgan
