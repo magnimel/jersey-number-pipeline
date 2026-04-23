@@ -35,8 +35,7 @@ I chose CRNN because it is a simple and common STR baseline. It is smaller than 
 Clone the team repo and create the branch:
 
 ```bash
-git clone https://github.com/AJAR-of-Cookies/jersey-number-recognition-team-5.git
-cd jersey-number-recognition-team-5
+git clone https://github.com/magnimel/jersey-number-pipeline.git
 git checkout -b individual_task_beichen
 ```
 
