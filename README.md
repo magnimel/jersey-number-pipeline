@@ -2,39 +2,37 @@
 
 Branch: `individual_task_beichen`
 
-This branch integrates an alternative scene text recognition (STR) backend into the jersey-number pipeline. The baseline team pipeline uses fine-tuned PARSeq; this branch adds CRNN as a lighter CTC-based STR model and keeps the same torso-crop input and tracklet-level voting flow.
+For my individual task, I added a CRNN scene text recognition model to the jersey-number pipeline. The team pipeline already uses PARSeq, so this branch keeps PARSeq and adds CRNN as another option. CRNN still uses the same torso crops and the same tracklet voting idea at the end.
 
-The original project documentation is preserved in [README_original.md](README_original.md).
+The original project README is still saved in [README_original.md](README_original.md).
 
 ## Model Choice
 
-Chosen model: `CRNN` (Convolutional Recurrent Neural Network)
+Model: `CRNN` (Convolutional Recurrent Neural Network)
 
-Source code: STRHub/PARSeq model hub vendored in this repository under `str/parseq/strhub/models/crnn`.
+Code location: `str/parseq/strhub/models/crnn`
 
-Pretrained weights: `pretrained=crnn`, downloaded by STRHub from the public `baudm/parseq` release URL listed in `str/parseq/strhub/models/utils.py`.
+Weights: `pretrained=crnn`, downloaded through STRHub from the public `baudm/parseq` release listed in `str/parseq/strhub/models/utils.py`.
 
-Pretraining data: the STRHub/PARSeq release documents standard STR LMDB datasets including MJSynth and SynthText in `str/parseq/Datasets.md`.
+Training data source: STRHub lists the usual STR datasets like MJSynth and SynthText in `str/parseq/Datasets.md`.
 
-Why CRNN: CRNN is a standard, compact STR baseline with convolutional features, bidirectional recurrent sequence modeling, and CTC decoding. It is usually faster and simpler than PARSeq, but less context-aware and likely less robust on low-resolution, occluded jersey crops.
+I chose CRNN because it is a simple and common STR baseline. It is smaller than PARSeq and uses CTC decoding, so it should be faster to run and easier to fine-tune. The downside is that it may not be as accurate on blurry or blocked jersey numbers.
 
-## Code Changes
+## What Changed
 
-The branch adds CRNN support without removing the PARSeq baseline.
-
-- `main.py` adds `--str_backend {parseq,crnn}`, `--str_checkpoint`, `--str_batch_size`, `--str_epochs`, and `--str_train_batch_size`.
-- `configuration.py` adds `crnn_str_model: pretrained=crnn` for SoccerNet and Hockey.
-- `str.py` now detects CTC models and decodes CRNN outputs into numeric jersey labels with at most two digits.
-- `str.py` writes optional timing metrics via `--metrics_file`.
-- `helpers.py` treats `0` through `99` as valid jersey-number predictions for the alternative STR path.
-- `main.py` falls back to heuristic voting for CRNN because the improved BiLSTM aggregator was trained on PARSeq-shaped logits.
-- `evaluate.py` can write combined accuracy and timing metrics JSON.
-- `scripts/extract_str_loss_curve.py` exports STRHub TensorBoard loss curves to CSV.
-- `scripts/make_evalai_submission.py` normalizes final predictions and optionally zips them for upload.
+- Added `--str_backend {parseq,crnn}` so the pipeline can switch between PARSeq and CRNN.
+- Added CRNN options for checkpoints, batch size, epochs, and training batch size.
+- Added CRNN config entries for SoccerNet and Hockey.
+- Updated `str.py` so it can decode CTC output from CRNN into one- or two-digit jersey numbers.
+- Added optional timing metrics with `--metrics_file`.
+- Allowed jersey numbers from `0` to `99` for the CRNN path.
+- Used heuristic voting for CRNN because the improved BiLSTM aggregator was trained for PARSeq logits.
+- Updated `evaluate.py` so it can save accuracy and timing metrics together.
+- Added helper scripts for exporting loss curves and creating EvalAI submission files.
 
 ## Setup
 
-Clone the team repository and create the required branch:
+Clone the team repo and create the branch:
 
 ```bash
 git clone https://github.com/AJAR-of-Cookies/jersey-number-recognition-team-5.git
@@ -42,18 +40,18 @@ cd jersey-number-recognition-team-5
 git checkout -b individual_task_beichen
 ```
 
-Install dependencies and download model weights/data using the team setup flow:
+Install dependencies and download the data:
 
 ```bash
 python3 setup.py SoccerNet
 python3 scripts/download_data.py
 ```
 
-This local checkout did not have `conda`, SoccerNet data, Hockey data, or model checkpoints available, so full fine-tuning and evaluation were not executed here. The commands below are the reproducible run plan for a prepared workstation or Colab.
+I could not run the full training or testing locally because this checkout did not have `conda`, the SoccerNet/Hockey data, or the model checkpoints. The commands below show how to run everything on a prepared machine or Colab.
 
 ## Fine-Tuning
 
-Fine-tune CRNN briefly on the Hockey jersey-number LMDB:
+Fine-tune CRNN on the Hockey jersey-number LMDB:
 
 ```bash
 python3 main.py Hockey train \
@@ -73,9 +71,9 @@ python3 main.py SoccerNet train \
   --str_train_batch_size 128
 ```
 
-Training checkpoints are written under `str/parseq/outputs/crnn/<run>/checkpoints/`. Use the best `*.ckpt` path as `--str_checkpoint` for evaluation.
+Checkpoints are saved under `str/parseq/outputs/crnn/<run>/checkpoints/`. Use the best `*.ckpt` file as `--str_checkpoint` when testing.
 
-Export loss curves after each run:
+Export the loss curve after training:
 
 ```bash
 python3 scripts/extract_str_loss_curve.py \
@@ -83,11 +81,11 @@ python3 scripts/extract_str_loss_curve.py \
   --output reports/crnn_loss_curve.csv
 ```
 
-Record the final training loss and validation loss from the exported CSV in the results table below.
+Use the CSV to fill in the training loss and validation loss in the results table.
 
 ## Evaluation
 
-Run CRNN on the same SoccerNet test pipeline used for the PARSeq baseline:
+Run CRNN on the SoccerNet test split:
 
 ```bash
 python3 main.py SoccerNet test \
@@ -96,7 +94,7 @@ python3 main.py SoccerNet test \
   --str_batch_size 512
 ```
 
-If torso crops and intermediate files already exist, resume from the last completed stage:
+If the crop files already exist, resume from the last finished step:
 
 ```bash
 python3 main.py SoccerNet test \
@@ -106,7 +104,7 @@ python3 main.py SoccerNet test \
   --str_batch_size 512
 ```
 
-Calculate Top-1 Accuracy and combine it with STR timing:
+Calculate Top-1 Accuracy and combine it with timing:
 
 ```bash
 python3 evaluate.py \
@@ -116,7 +114,7 @@ python3 evaluate.py \
   --output reports/crnn_test_metrics.json
 ```
 
-Run the challenge split and prepare an upload artifact:
+Run the challenge split and create the upload zip:
 
 ```bash
 python3 main.py SoccerNet challenge \
@@ -129,7 +127,7 @@ python3 scripts/make_evalai_submission.py \
   --output reports/crnn_challenge_submission.zip
 ```
 
-For the test split, package predictions similarly if EvalAI accepts local test submissions:
+For the test split, the same script can package the predictions:
 
 ```bash
 python3 scripts/make_evalai_submission.py \
@@ -139,15 +137,15 @@ python3 scripts/make_evalai_submission.py \
 
 ## Results
 
-The PARSeq baseline is the team's replicated result. CRNN results must be filled after running the commands above on the prepared dataset/checkpoint environment.
+The PARSeq baseline is the team's replicated result. The CRNN rows should be filled in after running the commands above with the full data and checkpoints.
 
 | Model | Fine-tuning | Top-1 Accuracy | STR Speed | Notes |
 |---|---:|---:|---:|---|
 | PARSeq baseline | Team replicated | 87.6% | Not recorded here | Reference baseline |
 | CRNN pretrained | None | Pending | Pending | `pretrained=crnn`, numeric CTC decoding |
-| CRNN Hockey -> SoccerNet | 5 Hockey epochs + 5-10 SoccerNet epochs | Pending | Pending | Expected final comparison row |
+| CRNN Hockey -> SoccerNet | 5 Hockey epochs + 5-10 SoccerNet epochs | Pending | Pending | Final comparison row |
 
-Loss-curve fields to record after training:
+Loss-curve fields to fill in after training:
 
 | Run | Dataset | Epochs | Final Train Loss | Final Val Loss | CSV |
 |---|---:|---:|---:|---:|---|
@@ -156,10 +154,6 @@ Loss-curve fields to record after training:
 
 ## Analysis
 
-CRNN should be faster and cheaper to fine-tune than PARSeq because it has a comparatively small CNN plus recurrent sequence head and uses greedy CTC decoding. That makes it a useful baseline for limited compute and for measuring whether the jersey-number task needs PARSeq's stronger language/context modeling.
+CRNN should be faster and cheaper to fine-tune than PARSeq because it is a smaller model and uses greedy CTC decoding. This makes it useful as a simpler baseline for checking whether the full PARSeq model is really needed for jersey numbers.
 
-The likely disadvantage is accuracy. Jersey crops are often low-resolution, motion-blurred, partially occluded, and limited to one or two digits. PARSeq's transformer decoder and learned sequence modeling can use stronger positional/context cues, while CRNN's CTC path can emit repeated, blank, or non-digit tokens. This branch mitigates that by filtering predictions to digits and reusing the team's tracklet-level heuristic voting, but the improved BiLSTM aggregator should be retrained before comparing it fairly with CRNN logits.
-
-## Timeline
-
-Using April 23, 2026 as the start date, the 3-week target date is May 14, 2026.
+The main risk is lower accuracy. Jersey crops can be blurry, small, blocked by other players, or only one or two digits long. PARSeq has stronger sequence modeling, while CRNN can repeat characters, output blanks, or miss digits. To reduce this, this branch filters outputs to numbers and keeps the team's tracklet-level voting. A fair comparison would also retrain the BiLSTM aggregator for CRNN logits.
